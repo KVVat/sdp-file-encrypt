@@ -17,5 +17,11 @@ enum class KeyProviderType {
      * in SharedPreferences. This is useful for demonstrating insecure practices or for
      * specific testing scenarios where hardware-backing is not required.
      */
-    INSECURE_SOFTWARE_ONLY
+    INSECURE_SOFTWARE_ONLY,
+
+    /**
+     * Uses the P521KeyProvider, which uses an Elliptic Curve key pair for
+     * hybrid encryption.
+     */
+    P521
 }

@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
 
     private val secureFileKeyUri = "android-keystore://secure_file_key"
     private val insecureFileKeyUri = "android-keystore://insecure_file_key"
+    private val p521FileKeyUri = "android-keystore://p521_file_key"
     private val securePrefsKeyUri = "android-keystore://secure_prefs_key"
     private lateinit var testRunner: EncryptionTestRunner
 
@@ -40,6 +41,15 @@ class MainActivity : ComponentActivity() {
             this,
             secureFileKeyUri,
             providerType = KeyProviderType.SECURE,
+            unlockedDeviceRequired = true
+        )
+    }
+
+    private val p521Manager: EncryptionManager by lazy {
+        EncryptionManager(
+            this,
+            p521FileKeyUri,
+            providerType = KeyProviderType.P521,
             unlockedDeviceRequired = true
         )
     }
@@ -80,6 +90,12 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { lockAndTest(KeyProviderType.SECURE) }) { Text("Lock & Test SECURE File") }
 
+            // P521 File Encryption Tests
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(onClick = { runP521FileTest() }) { Text("Test P521 File") }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { lockAndTest(KeyProviderType.P521) }) { Text("Lock & Test P521 File") }
+
             // SharedPreferences Test
             Spacer(modifier = Modifier.height(32.dp))
             Button(onClick = { runEncryptedPrefsTest() }) { Text("Test EncryptedSharedPreferences") }
@@ -91,18 +107,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runSecureFileTest() {
-        //val manager = EncryptionManager(this, secureFileKeyUri, KeyProviderType.SECURE, true)
         testRunner.runFullTest(secureManager, "SecureFileTest")
     }
 
+    private fun runP521FileTest() {
+        testRunner.runFullTest(p521Manager, "P521FileTest")
+    }
+
     private fun runInsecureFileTest() {
-       // val manager = EncryptionManager(this, insecureFileKeyUri, KeyProviderType.INSECURE_SOFTWARE_ONLY,unlockedDeviceRequired = true)
         testRunner.runFullTest(insecureManager, "InsecureFileTest")
     }
 
     private fun runEncryptedPrefsTest() {
         val testTag = "EncryptedPrefsTest"
-        //val secureManager = EncryptionManager(this, securePrefsKeyUri, KeyProviderType.SECURE)
         val encryptedPrefs = EncryptedSharedPreferences(this, "my_secure_prefs", secureManager)
         val key = "my_secret_key"
         val originalValue = "This is a top secret message! ${System.currentTimeMillis()}"
@@ -125,18 +142,18 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val keyUri = if (providerType == KeyProviderType.SECURE) secureFileKeyUri else insecureFileKeyUri
-        val manager = secureManager;//EncryptionManager(this, keyUri, providerType, true)
-        if(providerType == KeyProviderType.INSECURE_SOFTWARE_ONLY) {
-            //Log.d("LockAndTest", "Locking screen to test $providerType provider...")
-            manager == insecureManager
+        val manager = when (providerType) {
+            KeyProviderType.SECURE -> secureManager
+            KeyProviderType.P521 -> p521Manager
+            else -> insecureManager
         }
+
         Log.d("LockAndTest", "Locking screen to test $providerType provider...")
         devicePolicyManager.lockNow()
 
         Handler(Looper.getMainLooper()).postDelayed({
             Log.d("LockAndTest", "Running $providerType test after delay...")
-            val shouldFail = providerType == KeyProviderType.SECURE
+            val shouldFail = providerType == KeyProviderType.SECURE || providerType == KeyProviderType.P521
             testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
         }, 5000)
     }
@@ -151,8 +168,9 @@ class MainActivity : ComponentActivity() {
 
     private fun clearAll() {
         // Destroy file-based keys
-        EncryptionManager(this, secureFileKeyUri, KeyProviderType.SECURE).destroy()
-        EncryptionManager(this, insecureFileKeyUri, KeyProviderType.INSECURE_SOFTWARE_ONLY).destroy()
+        secureManager.destroy()
+        insecureManager.destroy()
+        p521Manager.destroy()
 
         // Destroy and clear prefs-based keys and data
         val prefsManager = EncryptionManager(this, securePrefsKeyUri, KeyProviderType.SECURE)

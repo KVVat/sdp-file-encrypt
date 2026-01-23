@@ -5,7 +5,8 @@ import android.util.Base64
 import com.android.niapsec.encryption.internal.TinkEncryptionProvider
 import com.android.niapsec.encryption.internal.keymanagement.InsecureSoftwareKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.KeyProvider
-import com.android.niapsec.encryption.internal.keymanagement.MasterKeyProvider
+import com.android.niapsec.encryption.internal.keymanagement.P521KeyProvider
+import com.android.niapsec.encryption.internal.keymanagement.SecureKeyProvider
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -28,9 +29,11 @@ class EncryptionManager(
         
         keyProvider = when (providerType) {
             KeyProviderType.SECURE ->
-                MasterKeyProvider(context, masterKeyUri, unlockedDeviceRequired, prefName)
+                SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, prefName)
             KeyProviderType.INSECURE_SOFTWARE_ONLY ->
                 InsecureSoftwareKeyProvider(context, prefName, masterKeyUri, unlockedDeviceRequired)
+            KeyProviderType.P521 ->
+                P521KeyProvider(context, masterKeyUri, unlockedDeviceRequired, prefName)
         }
 
         encryptionProvider = TinkEncryptionProvider(context, keyProvider)
