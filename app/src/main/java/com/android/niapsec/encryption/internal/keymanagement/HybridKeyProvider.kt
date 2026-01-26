@@ -149,7 +149,6 @@ class HybridKeyProvider(
 
     @Throws(GeneralSecurityException::class, IOException::class)
     private fun createOrGetAead(forceReload: Boolean = false): Aead {
-        // ★★ 2. Aeadオブジェクトの実装を修正 ★★
         return object : Aead {
 
             override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
