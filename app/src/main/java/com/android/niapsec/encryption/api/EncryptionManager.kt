@@ -2,7 +2,9 @@ package com.android.niapsec.encryption.api
 
 import android.content.Context
 import android.util.Base64
+import com.android.niapsec.encryption.internal.EncryptionProvider
 import com.android.niapsec.encryption.internal.TinkEncryptionProvider
+import com.android.niapsec.encryption.internal.keymanagement.HybridKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.InsecureSoftwareKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.KeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.P521KeyProvider
@@ -18,26 +20,22 @@ class EncryptionManager(
     context: Context,
     masterKeyUri: String, // Used for both SECURE and INSECURE to derive a unique preference file name
     providerType: KeyProviderType = KeyProviderType.SECURE,
-    unlockedDeviceRequired: Boolean = false // Only applies to the SECURE provider
+    unlockedDeviceRequired: Boolean = false, // Only applies to the SECURE provider
+    private val encryptionProvider: EncryptionProvider = TinkEncryptionProvider(context,
+        when (providerType) {
+            KeyProviderType.SECURE ->
+                SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
+            KeyProviderType.INSECURE_SOFTWARE_ONLY ->
+                InsecureSoftwareKeyProvider(context, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}", masterKeyUri, unlockedDeviceRequired)
+            KeyProviderType.P521 ->
+                P521KeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
+            KeyProviderType.HYBRID ->
+                HybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
+        }
+    )
 ) {
 
-    private val keyProvider: KeyProvider
-    private val encryptionProvider: TinkEncryptionProvider
-
-    init {
-        val prefName = "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}"
-        
-        keyProvider = when (providerType) {
-            KeyProviderType.SECURE ->
-                SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, prefName)
-            KeyProviderType.INSECURE_SOFTWARE_ONLY ->
-                InsecureSoftwareKeyProvider(context, prefName, masterKeyUri, unlockedDeviceRequired)
-            KeyProviderType.P521 ->
-                P521KeyProvider(context, masterKeyUri, unlockedDeviceRequired, prefName)
-        }
-
-        encryptionProvider = TinkEncryptionProvider(context, keyProvider)
-    }
+    private val keyProvider: KeyProvider = (encryptionProvider as TinkEncryptionProvider).keyProvider
 
     fun destroy() {
         keyProvider.destroy()

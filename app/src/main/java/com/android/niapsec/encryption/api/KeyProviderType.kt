@@ -23,5 +23,11 @@ enum class KeyProviderType {
      * Uses the P521KeyProvider, which uses an Elliptic Curve key pair for
      * hybrid encryption.
      */
-    P521
+    P521,
+
+    /**
+     * Uses the HybridKeyProvider, which uses a P-521 elliptic curve key pair as the KEK
+     * and AES256-GCM as the DEK for hybrid encryption.
+     */
+    HYBRID
 }

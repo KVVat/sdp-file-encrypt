@@ -29,12 +29,12 @@ class MainActivity : ComponentActivity() {
     private val secureFileKeyUri = "android-keystore://secure_file_key"
     private val insecureFileKeyUri = "android-keystore://insecure_file_key"
     private val p521FileKeyUri = "android-keystore://p521_file_key"
+    private val hybridFileKeyUri = "android-keystore://hybrid_file_key"
     private val securePrefsKeyUri = "android-keystore://secure_prefs_key"
     private lateinit var testRunner: EncryptionTestRunner
 
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var compName: ComponentName
-
 
     private val secureManager: EncryptionManager by lazy {
         EncryptionManager(
@@ -50,6 +50,15 @@ class MainActivity : ComponentActivity() {
             this,
             p521FileKeyUri,
             providerType = KeyProviderType.P521,
+            unlockedDeviceRequired = true
+        )
+    }
+
+    private val hybridManager: EncryptionManager by lazy {
+        EncryptionManager(
+            this,
+            hybridFileKeyUri,
+            providerType = KeyProviderType.HYBRID,
             unlockedDeviceRequired = true
         )
     }
@@ -96,6 +105,12 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { lockAndTest(KeyProviderType.P521) }) { Text("Lock & Test P521 File") }
 
+            // Hybrid File Encryption Tests
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(onClick = { runHybridFileTest() }) { Text("Test HYBRID File") }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { lockAndTest(KeyProviderType.HYBRID) }) { Text("Lock & Test HYBRID File") }
+
             // SharedPreferences Test
             Spacer(modifier = Modifier.height(32.dp))
             Button(onClick = { runEncryptedPrefsTest() }) { Text("Test EncryptedSharedPreferences") }
@@ -112,6 +127,10 @@ class MainActivity : ComponentActivity() {
 
     private fun runP521FileTest() {
         testRunner.runFullTest(p521Manager, "P521FileTest")
+    }
+
+    private fun runHybridFileTest() {
+        testRunner.runFullTest(hybridManager, "HybridFileTest")
     }
 
     private fun runInsecureFileTest() {
@@ -145,6 +164,7 @@ class MainActivity : ComponentActivity() {
         val manager = when (providerType) {
             KeyProviderType.SECURE -> secureManager
             KeyProviderType.P521 -> p521Manager
+            KeyProviderType.HYBRID -> hybridManager
             else -> insecureManager
         }
 
@@ -153,7 +173,7 @@ class MainActivity : ComponentActivity() {
 
         Handler(Looper.getMainLooper()).postDelayed({
             Log.d("LockAndTest", "Running $providerType test after delay...")
-            val shouldFail = providerType == KeyProviderType.SECURE || providerType == KeyProviderType.P521
+            val shouldFail = providerType == KeyProviderType.SECURE || providerType == KeyProviderType.P521 || providerType == KeyProviderType.HYBRID
             testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
         }, 5000)
     }
@@ -171,6 +191,7 @@ class MainActivity : ComponentActivity() {
         secureManager.destroy()
         insecureManager.destroy()
         p521Manager.destroy()
+        hybridManager.destroy()
 
         // Destroy and clear prefs-based keys and data
         val prefsManager = EncryptionManager(this, securePrefsKeyUri, KeyProviderType.SECURE)

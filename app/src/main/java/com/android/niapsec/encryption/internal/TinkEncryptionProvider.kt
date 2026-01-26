@@ -11,15 +11,15 @@ import java.security.GeneralSecurityException
 
 class TinkEncryptionProvider(
     private val context: Context,
-    private val keyProvider: KeyProvider
-) {
+    val keyProvider: KeyProvider
+) : EncryptionProvider {
 
     private val encryptionFlag = byteArrayOf(0x0)
 
     /**
      * Encrypts with the given key provider for file operations.
      */
-    fun encrypt(file: File): OutputStream {
+    override fun encrypt(file: File): OutputStream {
         val aead = keyProvider.getCachedAead();
         return object : ByteArrayOutputStream() {
             override fun close() {
@@ -34,10 +34,10 @@ class TinkEncryptionProvider(
     /**
      * Encrypts a plaintext string into a ciphertext byte array.
      */
-    fun encrypt(plaintext: String): ByteArray {
+    override fun encrypt(plaintext: String): ByteArray {
 
 
-        val aead = keyProvider.getCachedAead()
+        val aead = keyProvider.getAead()
 
         val ciphertext = aead.encrypt(plaintext.toByteArray(), encryptionFlag)
         return encryptionFlag + ciphertext
@@ -46,7 +46,7 @@ class TinkEncryptionProvider(
     /**
      * Smart decryption method for file operations.
      */
-    fun decrypt(file: File): InputStream {
+    override fun decrypt(file: File): InputStream {
         val fileBytes = file.readBytes()
         val plaintext = decrypt(fileBytes)
         return ByteArrayInputStream(plaintext.toByteArray())
@@ -55,7 +55,7 @@ class TinkEncryptionProvider(
     /**
      * Decrypts a ciphertext byte array into a plaintext string.
      */
-    fun decrypt(ciphertext: ByteArray): String {
+    override fun decrypt(ciphertext: ByteArray): String {
         if (ciphertext.isEmpty()) {
             throw GeneralSecurityException("Cannot decrypt empty data.")
         }
