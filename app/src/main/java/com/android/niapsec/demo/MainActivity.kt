@@ -12,10 +12,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,9 +29,9 @@ import com.android.niapsec.encryption.api.KeyProviderType
 class MainActivity : ComponentActivity() {
 
     private val secureFileKeyUri = "android-keystore://secure_file_key"
-    private val insecureFileKeyUri = "android-keystore://insecure_file_key"
     private val p521FileKeyUri = "android-keystore://p521_file_key"
     private val hybridFileKeyUri = "android-keystore://hybrid_file_key"
+    private val rawFileKeyUri = "android-keystore://raw_file_key"
     private val securePrefsKeyUri = "android-keystore://secure_prefs_key"
     private lateinit var testRunner: EncryptionTestRunner
 
@@ -63,11 +65,12 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private val insecureManager: EncryptionManager by lazy {
+    private val rawManager: EncryptionManager by lazy {
         EncryptionManager(
             this,
-            insecureFileKeyUri,
-            providerType = KeyProviderType.INSECURE_SOFTWARE_ONLY
+            rawFileKeyUri,
+            providerType = KeyProviderType.RAW,
+            unlockedDeviceRequired = true
         )
     }
 
@@ -94,30 +97,52 @@ class MainActivity : ComponentActivity() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // File Encryption Tests
-            Button(onClick = { runSecureFileTest() }) { Text("Test SECURE File") }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { lockAndTest(KeyProviderType.SECURE) }) { Text("Lock & Test SECURE File") }
+            ProviderTestGroup(
+                title = "SECURE (AES-GCM)",
+                onTestClick = { runSecureFileTest() },
+                onLockAndTestClick = { lockAndTest(KeyProviderType.SECURE) }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // P521 File Encryption Tests
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(onClick = { runP521FileTest() }) { Text("Test P521 File") }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { lockAndTest(KeyProviderType.P521) }) { Text("Lock & Test P521 File") }
+            ProviderTestGroup(
+                title = "P521 (ECIES with P-256)",
+                onTestClick = { runP521FileTest() },
+                onLockAndTestClick = { lockAndTest(KeyProviderType.P521) }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Hybrid File Encryption Tests
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(onClick = { runHybridFileTest() }) { Text("Test HYBRID File") }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { lockAndTest(KeyProviderType.HYBRID) }) { Text("Lock & Test HYBRID File") }
+            ProviderTestGroup(
+                title = "HYBRID (P-521 KEK + AES-256 DEK)",
+                onTestClick = { runHybridFileTest() },
+                onLockAndTestClick = { lockAndTest(KeyProviderType.HYBRID) }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+
+            ProviderTestGroup(
+                title = "RAW (JCA with AES-GCM)",
+                onTestClick = { runRawFileTest() },
+                onLockAndTestClick = { lockAndTest(KeyProviderType.RAW) }
+            )
 
             // SharedPreferences Test
             Spacer(modifier = Modifier.height(32.dp))
             Button(onClick = { runEncryptedPrefsTest() }) { Text("Test EncryptedSharedPreferences") }
-            
+
             // Cleanup
             Spacer(modifier = Modifier.height(32.dp))
             Button(onClick = { clearAll() }) { Text("Clear All Keys & Data") }
+        }
+    }
+
+    @Composable
+    private fun ProviderTestGroup(title: String, onTestClick: () -> Unit, onLockAndTestClick: () -> Unit) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = title, style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Button(onClick = onTestClick) { Text("Test File") }
+                Button(onClick = onLockAndTestClick) { Text("Lock & Test") }
+            }
         }
     }
 
@@ -133,8 +158,8 @@ class MainActivity : ComponentActivity() {
         testRunner.runFullTest(hybridManager, "HybridFileTest")
     }
 
-    private fun runInsecureFileTest() {
-        testRunner.runFullTest(insecureManager, "InsecureFileTest")
+    private fun runRawFileTest() {
+        testRunner.runFullTest(rawManager, "RawFileTest")
     }
 
     private fun runEncryptedPrefsTest() {
@@ -165,7 +190,7 @@ class MainActivity : ComponentActivity() {
             KeyProviderType.SECURE -> secureManager
             KeyProviderType.P521 -> p521Manager
             KeyProviderType.HYBRID -> hybridManager
-            else -> insecureManager
+            KeyProviderType.RAW -> rawManager
         }
 
         Log.d("LockAndTest", "Locking screen to test $providerType provider...")
@@ -173,7 +198,7 @@ class MainActivity : ComponentActivity() {
 
         Handler(Looper.getMainLooper()).postDelayed({
             Log.d("LockAndTest", "Running $providerType test after delay...")
-            val shouldFail = providerType == KeyProviderType.SECURE || providerType == KeyProviderType.P521 || providerType == KeyProviderType.HYBRID
+            val shouldFail = true // All secure providers should fail when locked
             testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
         }, 5000)
     }
@@ -189,9 +214,9 @@ class MainActivity : ComponentActivity() {
     private fun clearAll() {
         // Destroy file-based keys
         secureManager.destroy()
-        insecureManager.destroy()
         p521Manager.destroy()
         hybridManager.destroy()
+        rawManager.destroy()
 
         // Destroy and clear prefs-based keys and data
         val prefsManager = EncryptionManager(this, securePrefsKeyUri, KeyProviderType.SECURE)

@@ -37,7 +37,7 @@ class TinkEncryptionProvider(
     override fun encrypt(plaintext: String): ByteArray {
 
 
-        val aead = keyProvider.getAead()
+        val aead = keyProvider.getCachedAead()
 
         val ciphertext = aead.encrypt(plaintext.toByteArray(), encryptionFlag)
         return encryptionFlag + ciphertext
@@ -70,5 +70,9 @@ class TinkEncryptionProvider(
         val aead = keyProvider.getAead()
         val plaintext = aead.decrypt(actualCiphertext, encryptionFlag)
         return String(plaintext)
+    }
+
+    override fun destroy() {
+        keyProvider.destroy()
     }
 }

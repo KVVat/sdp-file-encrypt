@@ -28,4 +28,9 @@ interface EncryptionProvider {
      * Decrypts a ciphertext byte array into a plaintext string.
      */
     fun decrypt(ciphertext: ByteArray): String
+
+    /**
+     * Destroys any cryptographic material associated with this provider.
+     */
+    fun destroy()
 }

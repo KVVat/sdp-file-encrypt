@@ -90,17 +90,10 @@ class HybridKeyProvider(
             .build()
             .keysetHandle
 
-        // publicKeysetHandleの取得には秘密鍵へのアクセスは不要！
         keysetHandle.publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
     }
 
     private val _cachedAead: Aead by lazy {
-        /*val keysetHandle = AndroidKeysetManager.Builder()
-            .withSharedPref(context, HYBRID_KEYSET_NAME, keysetPrefName)
-            .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
-            .withMasterKeyUri(masterKeyUri)
-            .build()
-            .keysetHandle*/
         createOrGetAead()
     }
 
@@ -139,11 +132,9 @@ class HybridKeyProvider(
 
     override fun getCachedAead(): Aead {
         return _cachedAead
-        //return createOrGetAead(forceReload = true)
     }
 
     override fun getAead(): Aead {
-        //return _cachedAead
         return createOrGetAead(forceReload = true)
     }
 
@@ -168,16 +159,6 @@ class HybridKeyProvider(
             }
         }
     }
-
-    /*override fun getAead(): Aead {
-        val keysetHandle = AndroidKeysetManager.Builder()
-            .withSharedPref(context, HYBRID_KEYSET_NAME, keysetPrefName)
-            .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
-            .withMasterKeyUri(masterKeyUri)
-            .build()
-            .keysetHandle
-        return createAead(keysetHandle)
-    }*/
 
     private fun createAead(keysetHandle: KeysetHandle): Aead {
         val publicKeysetHandle = keysetHandle.publicKeysetHandle
