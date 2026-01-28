@@ -3,6 +3,7 @@ package com.android.niapsec.encryption.internal
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.security.keystore.KeyProtection
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -10,11 +11,9 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.security.GeneralSecurityException
 import java.security.KeyStore
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 
 class RawEncryptionProvider(
@@ -29,15 +28,40 @@ class RawEncryptionProvider(
     private val PADDING = KeyProperties.ENCRYPTION_PADDING_PKCS7
     private val TRANSFORMATION = "$KEY_ALGORITHM/$BLOCK_MODE/$PADDING"
 
-    private val IV_LENGTH_BYTES = 12
-    //private val GCM_TAG_LENGTH_BITS = 128
-
     private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
     init {
         if (!keyStore.containsAlias(keyAlias)) {
-            generateKey()
+            //generateKey()
         }
+    }
+
+    private fun generateEphemeralSoftwareKey():SecretKey {
+
+        val keyGenerator = KeyGenerator.getInstance(KEY_ALGORITHM, "AndroidOpenSSL")
+
+        keyGenerator.init(256)
+        //Generate it with a new alias
+        val secretKey = keyGenerator.generateKey()
+        val secretKeyEntry =
+            KeyStore.SecretKeyEntry(secretKey)
+        //Remove
+        if (keyStore.containsAlias(keyAlias)) {
+            keyStore.deleteEntry(keyAlias)
+        }
+
+        // Set the alias of the entry in Android KeyStore where the key will appear
+        // and the constraints (purposes) in the constructor of the Builder
+        keyStore.setEntry(
+            keyAlias, secretKeyEntry,
+            KeyProtection.Builder((KeyProperties.PURPOSE_DECRYPT or KeyProperties.PURPOSE_ENCRYPT))
+                .setEncryptionPaddings(PADDING)
+                .setBlockModes(BLOCK_MODE)
+                .setUnlockedDeviceRequired(unlockedDeviceRequired)
+                .build()
+        )
+
+        return secretKey
     }
 
     private fun generateKey() {
@@ -58,12 +82,14 @@ class RawEncryptionProvider(
 
     private fun encrypt(plaintext: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey())
+
+        val secretKey: SecretKey = generateEphemeralSoftwareKey()
+
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
 
         val spec = cipher.parameters.getParameterSpec(IvParameterSpec::class.java);
         val iv = spec.iv;
 
-        //cipher.init(Cipher.ENCRYPT_MODE, getSecretKey(), spec)
         val ciphertext = cipher.doFinal(plaintext)
 
         val result = ByteArray(iv.size + ciphertext.size)
