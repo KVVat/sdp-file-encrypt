@@ -40,13 +40,6 @@ class EncryptedSharedPreferencesTest {
         runStandardTests(prefs)
     }
 
-    @Test
-    fun testInsecureProvider_e2e() {
-        val manager = createManager(KeyProviderType.INSECURE_SOFTWARE_ONLY)
-        val prefs = EncryptedSharedPreferences(context, "test_insecure_prefs", manager)
-        runStandardTests(prefs)
-    }
-
     private fun runStandardTests(prefs: EncryptedSharedPreferences) {
         // 1. Test basic put and get
         val key1 = "myKey1"

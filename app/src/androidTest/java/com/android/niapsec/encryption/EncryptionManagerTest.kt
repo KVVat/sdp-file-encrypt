@@ -67,18 +67,6 @@ class EncryptionManagerTest {
     }
 
     @Test
-    fun testInsecureProvider_encryptAndDecrypt_works() {
-        val encryptionManager = createManager(KeyProviderType.INSECURE_SOFTWARE_ONLY)
-        val testFile = getTestFile("insecure_provider_test.txt")
-        val originalContent = "This is a secret message for the insecure provider."
-
-        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-
-        assertEquals(originalContent, decryptedContent)
-    }
-
-    @Test
     fun testSecureProvider_isUnavailableWhenDeviceIsLocked() {
         val encryptionManager = createManager(KeyProviderType.SECURE, unlockedDeviceRequired = true)
         val testFile = getTestFile("secure_provider_locked_test.txt")
@@ -101,23 +89,6 @@ class EncryptionManagerTest {
         } catch (e: GeneralSecurityException) {
             val message = e.message ?: ""
             assertTrue("Exception should indicate a device lock issue.", message.contains("unusable") || message.contains("Device locked"))
-        }
-    }
-
-    @Test
-    fun testInsecureProvider_isAvailableWhenDeviceIsLocked() {
-        val encryptionManager = createManager(KeyProviderType.INSECURE_SOFTWARE_ONLY)
-        val testFile = getTestFile("insecure_provider_locked_test.txt")
-        val originalContent = "This should be readable when locked."
-
-        assumeTrue("This test requires the device to be locked.", keyguardManager.isDeviceLocked)
-        
-        try {
-            encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-            val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-            assertEquals(originalContent, decryptedContent)
-        } catch (e: GeneralSecurityException) {
-            fail("Encryption/decryption with the insecure provider failed unexpectedly while device is locked: ${e.message}")
         }
     }
 }

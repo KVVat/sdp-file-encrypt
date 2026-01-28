@@ -12,19 +12,9 @@ import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.aead.AeadConfig
 import com.google.crypto.tink.hybrid.HybridConfig
 import com.google.crypto.tink.integration.android.AndroidKeysetManager
-import java.io.File
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
 
-/**
- * A KeyProvider that generates and stores an Elliptic Curve key pair for use with
- * ECIES (Elliptic Curve Integrated Encryption Scheme).
- *
- * This provider is designed for asymmetric encryption. The generated keyset is stored
- * in SharedPreferences, encrypted with a master key from the Android Keystore.
- *
- * Note: The default Tink template for ECIES uses the P256 curve.
- */
 class P521KeyProvider(
     private val context: Context,
     private val masterKeyUri: String,
@@ -83,7 +73,6 @@ class P521KeyProvider(
     }
 
     override fun getAead(): Aead {
-        // ALWAYS create a new manager to bypass Tink's in-memory caching.
         val keysetHandle = AndroidKeysetManager.Builder()
             .withSharedPref(context, P521_KEYSET_NAME, keysetPrefName)
             .withKeyTemplate(KeyTemplates.get("ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM"))
@@ -110,6 +99,9 @@ class P521KeyProvider(
     }
 
     override fun destroy() {
+        context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences(P521_KEYSET_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+
         try {
             val keyStore = KeyStore.getInstance("AndroidKeyStore")
             keyStore.load(null)
@@ -120,17 +112,7 @@ class P521KeyProvider(
             }
 
         } catch (e: Exception) {
-            Log.e("KeyStoreInspector", "Failed to list keys", e)
-        }
-        // Aggressive cleanup: delete the underlying files directly.
-        val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
-        val hardwarePrefsFile = File(prefsDir, "$keysetPrefName.xml")
-        if (hardwarePrefsFile.exists()) {
-            hardwarePrefsFile.delete()
-        }
-        val p521PrefsFile = File(prefsDir, "$P521_KEYSET_NAME.xml")
-        if (p521PrefsFile.exists()) {
-            p521PrefsFile.delete()
+            Log.e("P521KeyProvider", "Failed to destroy master key", e)
         }
     }
 }

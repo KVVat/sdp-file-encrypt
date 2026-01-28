@@ -20,17 +20,9 @@ import com.google.crypto.tink.proto.EciesAeadHkdfParams
 import com.google.crypto.tink.proto.EciesHkdfKemParams
 import com.google.crypto.tink.proto.EllipticCurveType
 import com.google.crypto.tink.proto.HashType
-import java.io.File
-import java.io.IOException
-import java.security.GeneralSecurityException
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
 
-/**
- * A KeyProvider that implements hybrid encryption using an ECIES scheme.
- * It uses a P-521 elliptic curve key pair as the Key-Encrypting Key (KEK) and
- * AES256-GCM as the Data-Encrypting Key (DEK).
- */
 class HybridKeyProvider(
     private val context: Context,
     private val masterKeyUri: String,
@@ -39,11 +31,7 @@ class HybridKeyProvider(
 ) : KeyProvider {
 
     companion object {
-        /**
-         * A custom Tink KeyTemplate for ECIES using P-521 curve and AES256-GCM for the DEM.
-         */
         val P521_AES256_GCM_TEMPLATE: KeyTemplate by lazy {
-            // 1. Define the DEM Key Template (AES256-GCM) as a proto.
             val demAeadKeyFormat = AesGcmKeyFormat.newBuilder().setKeySize(32).build()
             val demKeyTemplate = com.google.crypto.tink.proto.KeyTemplate.newBuilder()
                 .setValue(demAeadKeyFormat.toByteString())
@@ -51,29 +39,21 @@ class HybridKeyProvider(
                 .setOutputPrefixType(com.google.crypto.tink.proto.OutputPrefixType.TINK)
                 .build()
             val demParams = EciesAeadDemParams.newBuilder().setAeadDem(demKeyTemplate).build()
-
-            // 2. Define the Key Encapsulation Mechanism (KEM) parameters.
             val kemParams = EciesHkdfKemParams.newBuilder()
                 .setCurveType(EllipticCurveType.NIST_P521)
                 .setHkdfHashType(HashType.SHA256)
                 .build()
-
-            // 3. Combine KEM and DEM into ECIES parameters.
             val eciesParams = EciesAeadHkdfParams.newBuilder()
                 .setKemParams(kemParams)
                 .setDemParams(demParams)
                 .setEcPointFormat(EcPointFormat.UNCOMPRESSED)
                 .build()
-
-            // 4. Create the ECIES Key Format.
             val keyFormat = EciesAeadHkdfKeyFormat.newBuilder()
                 .setParams(eciesParams)
                 .build()
-
-            // 5. Create the final KeyTemplate.
             KeyTemplate.create(
                 "type.googleapis.com/google.crypto.tink.EciesAeadHkdfPrivateKey",
-                keyFormat.toByteString().toByteArray(), // Convert ByteString to ByteArray
+                keyFormat.toByteString().toByteArray(),
                 KeyTemplate.OutputPrefixType.TINK
             )
         }
@@ -82,19 +62,14 @@ class HybridKeyProvider(
     private val HYBRID_KEYSET_NAME = "hybrid_keyset"
     val unlockedDeviceRequired: Boolean = _unlockedDeviceRequired
 
-    private val publicEncrypt: HybridEncrypt by lazy {
+    private val _cachedAead: Aead by lazy {
         val keysetHandle = AndroidKeysetManager.Builder()
             .withSharedPref(context, HYBRID_KEYSET_NAME, keysetPrefName)
             .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
             .withMasterKeyUri(masterKeyUri)
             .build()
             .keysetHandle
-
-        keysetHandle.publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
-    }
-
-    private val _cachedAead: Aead by lazy {
-        createOrGetAead()
+        createAead(keysetHandle)
     }
 
     init {
@@ -135,29 +110,13 @@ class HybridKeyProvider(
     }
 
     override fun getAead(): Aead {
-        return createOrGetAead(forceReload = true)
-    }
-
-    @Throws(GeneralSecurityException::class, IOException::class)
-    private fun createOrGetAead(forceReload: Boolean = false): Aead {
-        return object : Aead {
-
-            override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
-                return publicEncrypt.encrypt(plaintext, associatedData)
-            }
-
-            override fun decrypt(ciphertext: ByteArray, associatedData: ByteArray): ByteArray {
-                // Keystoreにアクセスするため、アンロックが必要
-                val keysetHandle = AndroidKeysetManager.Builder()
-                    .withSharedPref(context, HYBRID_KEYSET_NAME, keysetPrefName)
-                    .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
-                    .withMasterKeyUri(masterKeyUri)
-                    .build()
-                    .keysetHandle
-                val hybridDecrypt = keysetHandle.getPrimitive(HybridDecrypt::class.java)
-                return hybridDecrypt.decrypt(ciphertext, associatedData)
-            }
-        }
+        val keysetHandle = AndroidKeysetManager.Builder()
+            .withSharedPref(context, HYBRID_KEYSET_NAME, keysetPrefName)
+            .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
+            .withMasterKeyUri(masterKeyUri)
+            .build()
+            .keysetHandle
+        return createAead(keysetHandle)
     }
 
     private fun createAead(keysetHandle: KeysetHandle): Aead {
@@ -177,6 +136,8 @@ class HybridKeyProvider(
     }
 
     override fun destroy() {
+        context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit().clear().commit()
+
         try {
             val keyStore = KeyStore.getInstance("AndroidKeyStore")
             keyStore.load(null)
@@ -185,17 +146,7 @@ class HybridKeyProvider(
                 keyStore.deleteEntry(keyAlias)
             }
         } catch (e: Exception) {
-            Log.e("KeyStoreInspector", "Failed to destroy master key", e)
-        }
-
-        val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
-        val keysetFile = File(prefsDir, "$keysetPrefName.xml")
-        if (keysetFile.exists()) {
-            keysetFile.delete()
-        }
-        val hybridKeysetFile = File(prefsDir, "$HYBRID_KEYSET_NAME.xml")
-        if (hybridKeysetFile.exists()) {
-            hybridKeysetFile.delete()
+            Log.e("HybridKeyProvider", "Failed to destroy master key", e)
         }
     }
 }

@@ -8,8 +8,8 @@ import java.io.File
 class EncryptionTestRunner(private val context: Context) {
 
     companion object {
-        private const val ENCRYPTED_FILE_NAME = "test_file.txt"
-        private const val ORIGINAL_TEXT = "This is a secret message."
+        const val ENCRYPTED_FILE_NAME = "test_file.txt"
+        const val ORIGINAL_TEXT = "This is a secret message."
     }
 
     fun runFullTest(
