@@ -3,13 +3,13 @@ md
 
 This document provides project-level instructions for any AI agent assisting with the development of this Android application.
 
-## 1. Core Project Goal (プロジェクトの核心的な目的)
+## 1. Core Project Goal 
 
 The primary goal of this project is to demonstrate and compare different file encryption strategies on Android, focusing on the correct and incorrect ways to use the `AndroidKeyStore` system. The project must clearly distinguish between secure, best-practice implementations and intentionally insecure ones for educational purposes.
 
 このプロジェクトの主な目的は、Android上での様々なファイル暗号化戦略を比較・実証することです。特に`AndroidKeyStore`システムの正しい使い方と間違った使い方に焦点を当てます。このプロジェクトは、セキュアなベストプラクティスに準拠した実装と、学習目的で意図的に安全でなくした実装とを明確に区別しなければなりません。
 
-## 2. Key Component Roles (主要コンポーネントの役割)
+## 2. Key Component Roles 
 
 When providing code suggestions or analysis, adhere to the specific role of each `EncryptionProvider`.
 
@@ -32,7 +32,7 @@ When providing code suggestions or analysis, adhere to the specific role of each
 
 -   **`EncryptionManager`**: This is a client-facing facade. Its role is to simplify the API for the UI layer (`MainActivity`). Changes to the providers should ideally not require major changes to the `EncryptionManager` public API.
 
-## 3. High-Level Instructions and Constraints (高レベルの指示と制約)
+## 3. High-Level Instructions and Constraints 
 
 1.  **Prioritize Security Best Practices (for secure providers)**: For `HybridKeyProvider` and `SecureKeyProvider`, all suggestions must align with Android's official security guidelines and the principles of the Android Keystore system. Refer to the concepts in Protection Profiles (PP_MDF) where relevant.
 
