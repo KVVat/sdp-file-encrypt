@@ -73,6 +73,63 @@ class EncryptionProviderTest {
         assertEquals("Decrypted content should match original", originalText, decryptedText)
     }
 
+    @Test
+    fun testSecureProvider_EncryptDecrypt_TwoFiles_Succeeds() {
+        val manager = createManager(KeyProviderType.SECURE)
+
+        val testFile1 = createTestFile("secure_test_1.txt")
+        val originalText1 = "This is the first secure message."
+        manager.encryptToFile(testFile1).use { it.write(originalText1.toByteArray()) }
+
+        val testFile2 = createTestFile("secure_test_2.txt")
+        val originalText2 = "This is the second secure message."
+        manager.encryptToFile(testFile2).use { it.write(originalText2.toByteArray()) }
+
+        val decryptedText1 = manager.decryptFromFile(testFile1).use { it.reader().readText() }
+        assertEquals("Decrypted content for file 1 should match original", originalText1, decryptedText1)
+
+        val decryptedText2 = manager.decryptFromFile(testFile2).use { it.reader().readText() }
+        assertEquals("Decrypted content for file 2 should match original", originalText2, decryptedText2)
+    }
+
+    @Test
+    fun testHybridProvider_EncryptDecrypt_TwoFiles_Succeeds() {
+        val manager = createManager(KeyProviderType.HYBRID)
+
+        val testFile1 = createTestFile("hybrid_test_1.txt")
+        val originalText1 = "This is the first hybrid message."
+        manager.encryptToFile(testFile1).use { it.write(originalText1.toByteArray()) }
+
+        val testFile2 = createTestFile("hybrid_test_2.txt")
+        val originalText2 = "This is the second hybrid message."
+        manager.encryptToFile(testFile2).use { it.write(originalText2.toByteArray()) }
+
+        val decryptedText1 = manager.decryptFromFile(testFile1).use { it.reader().readText() }
+        assertEquals("Decrypted content for file 1 should match original", originalText1, decryptedText1)
+
+        val decryptedText2 = manager.decryptFromFile(testFile2).use { it.reader().readText() }
+        assertEquals("Decrypted content for file 2 should match original", originalText2, decryptedText2)
+    }
+
+    @Test
+    fun testRawProvider_EncryptDecrypt_TwoFiles_Succeeds() {
+        val manager = createManager(KeyProviderType.RAW)
+
+        val testFile1 = createTestFile("raw_test_1.txt")
+        val originalText1 = "This is the first raw message."
+        manager.encryptToFile(testFile1).use { it.write(originalText1.toByteArray()) }
+
+        val testFile2 = createTestFile("raw_test_2.txt")
+        val originalText2 = "This is the second raw message."
+        manager.encryptToFile(testFile2).use { it.write(originalText2.toByteArray()) }
+
+        val decryptedText1 = manager.decryptFromFile(testFile1).use { it.reader().readText() }
+        assertEquals("Decrypted content for file 1 should match original", originalText1, decryptedText1)
+
+        val decryptedText2 = manager.decryptFromFile(testFile2).use { it.reader().readText() }
+        assertEquals("Decrypted content for file 2 should match original", originalText2, decryptedText2)
+    }
+
     private fun createManager(providerType: KeyProviderType): EncryptionManager {
         val keyUri = "android-keystore://test_key_for_${providerType.name}"
         return EncryptionManager(
