@@ -43,3 +43,25 @@ When providing code suggestions or analysis, adhere to the specific role of each
     -   **Decryption**: *Always* requires the device to be unlocked to access the private/master key in Keystore.
 
 4.  **No `AndroidOpenSSL` for Key Generation/Storage**: Do not suggest creating keys using `AndroidOpenSSL` and storing them in plain files. All persistent keys or key-encrypting keys must be managed by the `AndroidKeyStore` provider.
+
+## 4. Others
+
+1. Apply Android Open Source Project's standard header below in each java/kotlin file. Also replace $YEAR in the text with current year. 
+
+``` Java 
+/*
+* Copyright (C) $YEAR The Android Open Source Project
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*      http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+```
