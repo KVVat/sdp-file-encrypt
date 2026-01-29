@@ -22,6 +22,7 @@ import com.google.crypto.tink.proto.EllipticCurveType
 import com.google.crypto.tink.proto.HashType
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
+import androidx.core.content.edit
 
 class HybridKeyProvider(
     private val context: Context,
@@ -76,7 +77,6 @@ class HybridKeyProvider(
         AeadConfig.register()
         HybridConfig.register()
         createMasterKeyIfNeeded()
-        _cachedAead
     }
 
     override fun getUnlockDeviceRequired(): Boolean {
@@ -136,7 +136,7 @@ class HybridKeyProvider(
     }
 
     override fun destroy() {
-        context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit(commit = true) { clear() }
 
         try {
             val keyStore = KeyStore.getInstance("AndroidKeyStore")
