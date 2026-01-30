@@ -213,6 +213,7 @@ class MainActivity : ComponentActivity() {
         val manager = when (providerType) {
             KeyProviderType.HYBRID -> hybridManager
             KeyProviderType.RAW -> rawManager
+            else -> throw IllegalArgumentException("Unsupported provider type: $providerType")
         }
 
         Log.d("LockAndTest", "Locking screen to test $providerType provider...")
