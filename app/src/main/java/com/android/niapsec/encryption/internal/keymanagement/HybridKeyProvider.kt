@@ -19,9 +19,13 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Log
+import androidx.core.content.edit
 import com.google.crypto.tink.Aead
+import com.google.crypto.tink.CleartextKeysetHandle
 import com.google.crypto.tink.HybridDecrypt
 import com.google.crypto.tink.HybridEncrypt
+import com.google.crypto.tink.JsonKeysetReader
+import com.google.crypto.tink.JsonKeysetWriter
 import com.google.crypto.tink.KeyTemplate
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.aead.AeadConfig
@@ -35,9 +39,10 @@ import com.google.crypto.tink.proto.EciesAeadHkdfParams
 import com.google.crypto.tink.proto.EciesHkdfKemParams
 import com.google.crypto.tink.proto.EllipticCurveType
 import com.google.crypto.tink.proto.HashType
+import java.io.ByteArrayOutputStream
+import java.security.GeneralSecurityException
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
-import androidx.core.content.edit
 
 class HybridKeyProvider(
     private val context: Context,
@@ -75,23 +80,73 @@ class HybridKeyProvider(
         }
     }
 
-    private val HYBRID_KEYSET_NAME = "hybrid_keyset"
+    private val PRIVATE_KEYSET_NAME = "hybrid_private_keyset"
+    private val PUBLIC_KEYSET_PREF_NAME = "hybrid_public_keyset_pref"
+    private val PUBLIC_KEYSET_KEY = "public_keyset"
     val unlockedDeviceRequired: Boolean = _unlockedDeviceRequired
 
-    private val _cachedAead: Aead by lazy {
-        val keysetHandle = AndroidKeysetManager.Builder()
-            .withSharedPref(context, HYBRID_KEYSET_NAME, keysetPrefName)
+    private val privateKeysetManager: AndroidKeysetManager by lazy {
+        AndroidKeysetManager.Builder()
+            .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
             .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
             .withMasterKeyUri(masterKeyUri)
             .build()
-            .keysetHandle
-        createAead(keysetHandle)
     }
 
     init {
         AeadConfig.register()
         HybridConfig.register()
         createMasterKeyIfNeeded()
+        synchronizePublicKeyset()
+    }
+
+    private fun getPublicKeysetHandle(): KeysetHandle {
+        val prefs = context.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
+        var serializedPublicKeyset = prefs.getString(PUBLIC_KEYSET_KEY, null)
+
+        if (serializedPublicKeyset == null) {
+            // Public keyset is not found, so we need to generate and save it now.
+            // This might fail if the device is locked.
+            synchronizePublicKeyset()
+            serializedPublicKeyset = prefs.getString(PUBLIC_KEYSET_KEY, null)
+        }
+
+        return serializedPublicKeyset?.let {
+            CleartextKeysetHandle.read(JsonKeysetReader.withString(it))
+        } ?: throw GeneralSecurityException(
+            "Could not get or create public keyset. Device might be locked."
+        )
+    }
+
+    private fun synchronizePublicKeyset() {
+        try {
+            // Get the private keyset, which may trigger key generation if it doesn't exist
+            val privateKeysetHandle = privateKeysetManager.keysetHandle
+            // Extract the public keyset
+            val publicKeysetHandle = privateKeysetHandle.publicKeysetHandle
+
+            // Serialize the public keyset to a string
+            val outputStream = ByteArrayOutputStream()
+            CleartextKeysetHandle.write(
+                publicKeysetHandle, JsonKeysetWriter.withOutputStream(outputStream)
+            )
+            val serializedPublicKeyset = outputStream.toString()
+
+            // Manually write the serialized public keyset to a separate shared preference.
+            context.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
+                .edit(commit = true) {
+                    putString(PUBLIC_KEYSET_KEY, serializedPublicKeyset)
+                }
+        } catch (e: GeneralSecurityException) {
+            // This can happen if the device is locked and the private key is not in memory.
+            Log.w(
+                "HybridKeyProvider",
+                "Could not synchronize public keyset, device might be locked.",
+                e
+            )
+            // Re-throw the exception to notify the caller that the operation failed.
+            throw e
+        }
     }
 
     override fun getUnlockDeviceRequired(): Boolean {
@@ -120,24 +175,13 @@ class HybridKeyProvider(
         }
     }
 
-    override fun getCachedAead(): Aead {
-        return _cachedAead
-    }
+
 
     override fun getAead(): Aead {
-        val keysetHandle = AndroidKeysetManager.Builder()
-            .withSharedPref(context, HYBRID_KEYSET_NAME, keysetPrefName)
-            .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
-            .withMasterKeyUri(masterKeyUri)
-            .build()
-            .keysetHandle
-        return createAead(keysetHandle)
-    }
 
-    private fun createAead(keysetHandle: KeysetHandle): Aead {
-        val publicKeysetHandle = keysetHandle.publicKeysetHandle
+        // This does not require the device to be unlocked as the public key is stored in cleartext.
+        val publicKeysetHandle = getPublicKeysetHandle()
         val hybridEncrypt = publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
-        val hybridDecrypt = keysetHandle.getPrimitive(HybridDecrypt::class.java)
 
         return object : Aead {
             override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
@@ -145,13 +189,24 @@ class HybridKeyProvider(
             }
 
             override fun decrypt(ciphertext: ByteArray, associatedData: ByteArray): ByteArray {
+                // This will require the device to be unlocked to access the private key.
+                val privateKeysetHandle = privateKeysetManager.keysetHandle
+                val hybridDecrypt = privateKeysetHandle.getPrimitive(HybridDecrypt::class.java)
                 return hybridDecrypt.decrypt(ciphertext, associatedData)
             }
         }
     }
 
     override fun destroy() {
-        context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit(commit = true) { clear() }
+        // Clear the private keyset preference file
+        context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit(commit = true) {
+            clear()
+        }
+        // Clear the public keyset preference file
+        context.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
+            .edit(commit = true) {
+                clear()
+            }
 
         try {
             val keyStore = KeyStore.getInstance("AndroidKeyStore")
