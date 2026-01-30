@@ -5,7 +5,7 @@
 PACKAGE_NAME="com.android.niapsec"
 
 # The name of the Frida hook script.
-HOOK_SCRIPT="hook.js"
+HOOK_SCRIPT="security-hook.js"
 
 # The path to the frida-server on the device.
 FRIDA_SERVER_PATH="/data/local/tmp/frida-server"
