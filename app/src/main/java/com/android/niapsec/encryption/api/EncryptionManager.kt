@@ -21,8 +21,6 @@ import com.android.niapsec.encryption.internal.EncryptionProvider
 import com.android.niapsec.encryption.internal.RawEncryptionProvider
 import com.android.niapsec.encryption.internal.TinkEncryptionProvider
 import com.android.niapsec.encryption.internal.keymanagement.HybridKeyProvider
-import com.android.niapsec.encryption.internal.keymanagement.P521KeyProvider
-import com.android.niapsec.encryption.internal.keymanagement.SecureKeyProvider
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -33,22 +31,14 @@ import java.io.OutputStream
 class EncryptionManager(
     context: Context,
     masterKeyUri: String, // Used for both SECURE and INSECURE to derive a unique preference file name
-    providerType: KeyProviderType = KeyProviderType.SECURE,
+    providerType: KeyProviderType = KeyProviderType.HYBRID,
     unlockedDeviceRequired: Boolean = false, // Only applies to the SECURE provider
     private val encryptionProvider: EncryptionProvider = when (providerType) {
         KeyProviderType.RAW ->
             RawEncryptionProvider(context, masterKeyUri.replace("android-keystore://", ""), unlockedDeviceRequired)
-        else ->
+        KeyProviderType.HYBRID ->
             TinkEncryptionProvider(context,
-                when (providerType) {
-                    KeyProviderType.SECURE ->
-                        SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
-                    KeyProviderType.P521 ->
-                        P521KeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
-                    KeyProviderType.HYBRID ->
-                        HybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
-                    else -> throw IllegalArgumentException("Invalid provider type: $providerType")
-                }
+                HybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
             )
     }
 ) {
