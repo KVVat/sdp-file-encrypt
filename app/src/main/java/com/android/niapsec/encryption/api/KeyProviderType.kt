@@ -21,6 +21,12 @@ package com.android.niapsec.encryption.api
  */
 enum class KeyProviderType {
     /**
+     * Uses the MasterKeyProvider, which leverages the hardware-backed Android Keystore
+     * for maximum security. This should be the default for production apps.
+     */
+    SECURE,
+
+    /**
      * Uses the HybridKeyProvider, which uses a P-521 elliptic curve key pair as the KEK
      * and AES256-GCM as the DEK for hybrid encryption.
      */

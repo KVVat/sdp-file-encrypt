@@ -21,6 +21,7 @@ import com.android.niapsec.encryption.internal.EncryptionProvider
 import com.android.niapsec.encryption.internal.RawEncryptionProvider
 import com.android.niapsec.encryption.internal.TinkEncryptionProvider
 import com.android.niapsec.encryption.internal.keymanagement.HybridKeyProvider
+import com.android.niapsec.encryption.internal.keymanagement.SecureKeyProvider
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -40,6 +41,8 @@ class EncryptionManager(
             TinkEncryptionProvider(context,
                 HybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
             )
+        KeyProviderType.SECURE ->
+            TinkEncryptionProvider(context, SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}"))
     }
 ) {
 
