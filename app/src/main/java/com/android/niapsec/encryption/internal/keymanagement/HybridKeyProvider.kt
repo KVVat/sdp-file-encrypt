@@ -85,14 +85,6 @@ class HybridKeyProvider(
     private val PUBLIC_KEYSET_KEY = "public_keyset"
     val unlockedDeviceRequired: Boolean = _unlockedDeviceRequired
 
-    private val privateKeysetManager: AndroidKeysetManager by lazy {
-        AndroidKeysetManager.Builder()
-            .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
-            .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
-            .withMasterKeyUri(masterKeyUri)
-            .build()
-    }
-
     init {
         AeadConfig.register()
         HybridConfig.register()
@@ -121,9 +113,15 @@ class HybridKeyProvider(
     private fun synchronizePublicKeyset() {
         try {
             // Get the private keyset, which may trigger key generation if it doesn't exist
-            val privateKeysetHandle = privateKeysetManager.keysetHandle
-            // Extract the public keyset
-            val publicKeysetHandle = privateKeysetHandle.publicKeysetHandle
+            val privateKeysetManager: AndroidKeysetManager by lazy {
+                AndroidKeysetManager.Builder()
+                    .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
+                    .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
+                    .withMasterKeyUri(masterKeyUri)
+                    .build()
+            }
+            //Extract the public keyset
+            val publicKeysetHandle = privateKeysetManager.keysetHandle.publicKeysetHandle
 
             // Serialize the public keyset to a string
             val outputStream = ByteArrayOutputStream()
@@ -175,8 +173,6 @@ class HybridKeyProvider(
         }
     }
 
-
-
     override fun getAead(): Aead {
 
         // This does not require the device to be unlocked as the public key is stored in cleartext.
@@ -190,6 +186,13 @@ class HybridKeyProvider(
 
             override fun decrypt(ciphertext: ByteArray, associatedData: ByteArray): ByteArray {
                 // This will require the device to be unlocked to access the private key.
+
+                val privateKeysetManager = AndroidKeysetManager.Builder()
+                    .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
+                    .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
+                    .withMasterKeyUri(masterKeyUri)
+                    .build()
+
                 val privateKeysetHandle = privateKeysetManager.keysetHandle
                 val hybridDecrypt = privateKeysetHandle.getPrimitive(HybridDecrypt::class.java)
                 return hybridDecrypt.decrypt(ciphertext, associatedData)
