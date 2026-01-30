@@ -36,7 +36,7 @@ class TinkEncryptionProvider(
      * Encrypts with the given key provider for file operations.
      */
     override fun encrypt(file: File): OutputStream {
-        val aead = keyProvider.getCachedAead();
+        val aead = keyProvider.getAead()
         return object : ByteArrayOutputStream() {
             override fun close() {
                 super.close()
@@ -53,7 +53,7 @@ class TinkEncryptionProvider(
     override fun encrypt(plaintext: String): ByteArray {
 
 
-        val aead = keyProvider.getCachedAead()
+        val aead = keyProvider.getAead()
 
         val ciphertext = aead.encrypt(plaintext.toByteArray(), encryptionFlag)
         return encryptionFlag + ciphertext

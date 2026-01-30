@@ -77,13 +77,13 @@ class SecureKeyProvider(
     }
 
 
-    override fun getCachedAead(): Aead {
-        if(unlockedDeviceRequired){
-            return _cachedAead;
-        } else {
-            return getAead()
-        }
-    }
+//    override fun getCachedAead(): Aead {
+//        if(unlockedDeviceRequired){
+//            return _cachedAead;
+//        } else {
+//            return getAead()
+//        }
+//    }
     override fun getAead(): Aead {
         val keysetHandle = AndroidKeysetManager.Builder()
             .withSharedPref(context, HARDWARE_KEYSET_NAME,keysetPrefName)

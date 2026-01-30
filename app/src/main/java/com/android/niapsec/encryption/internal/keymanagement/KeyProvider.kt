@@ -28,8 +28,6 @@ interface KeyProvider {
      */
     fun getAead(): Aead
 
-    fun getCachedAead(): Aead
-
 
     fun getUnlockDeviceRequired():Boolean
     /**

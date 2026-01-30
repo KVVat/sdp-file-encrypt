@@ -84,9 +84,6 @@ class P521KeyProvider(
         }
     }
 
-    override fun getCachedAead(): Aead {
-        return _cachedAead
-    }
 
     override fun getAead(): Aead {
         val keysetHandle = AndroidKeysetManager.Builder()
