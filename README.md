@@ -1,49 +1,64 @@
-# SDP File Encryption Library for Android
+# SDP File Encryption Demo
 
-This repository provides a robust and standardized library for securely encrypting and decrypting sensitive data (SDP: Sensitive Data Protection) on Android. It leverages hardware-backed security and modern cryptographic practices to protect data at rest.
+## 1. Project Overview
 
-## Features
+This is an Android application designed to demonstrate and compare different file encryption strategies, particularly focusing on the correct and incorrect ways to use the `AndroidKeyStore` system.
 
-- **Hardware-Backed Key Management**: Uses Android Keystore to store master keys (KEK), ensuring they never leave the secure hardware (TEE/SE).
-- **Envelope Encryption**: Implementation of the "Digital Envelope" technique where data is encrypted with a Data Encryption Key (DEK), which is then encrypted by the master key and stored alongside the data.
-- **Multiple Encryption Providers**:
-    - **SECURE**: High-level implementation using Google's [Tink](https://github.com/google/tink) library with AES256-GCM.
-    - **HYBRID**: Advanced hybrid encryption combining ECIES (P-521) for key wrapping and AES-GCM for data encryption.
-    - **RAW**: Direct JCA (Java Cryptography Architecture) implementation for environments where external dependencies must be minimized.
-    - **P521**: Asymmetric encryption support using the NIST P-521 elliptic curve.
-- **Security Policies**: Support for `unlockedDeviceRequired` to prevent data decryption while the device is locked, meeting high security standards like NIAP.
-- **Transparent SharedPreferences Encryption**: Includes a wrapper for `SharedPreferences` to seamlessly encrypt key-value pairs.
+The primary goal is to compare three distinct `EncryptionProvider` implementations:
+- `HybridKeyProvider`: The most secure and recommended approach, demonstrating a two-tier envelope encryption.
+- `SecureKeyProvider`: A standard, best-practice implementation of envelope encryption using symmetric keys.
+- `RawEncryptionProvider`: An intentionally insecure implementation for educational purposes, highlighting the pitfalls of misusing the Keystore.
 
-## Getting Started
+## 2. Key Components
 
-### Prerequisites
-- Android SDK Level 32 or higher (recommended)
-- Kotlin 1.9+
+### `EncryptionProvider` Implementations
 
-### Integration
+#### `HybridKeyProvider`
+- **Strategy**: A robust two-tier envelope encryption.
+- **KEK (Key-Encrypting Key)**: An `AES-256-GCM` key stored securely in the `AndroidKeyStore` with the `unlockedDeviceRequired` flag.
+- **DEK (Data-Encapsulating Key)**: A Tink-managed ECIES keyset using a `P-521` key pair. This entire keyset is encrypted by the KEK.
+- **Lock-State Behavior**:
+    - **Encryption**: It safely supports encryption while the device is locked. This is achieved by persisting the ECIES public key in a separate, cleartext `SharedPreferences` file.
+    - **Decryption**: It correctly fails when the device is locked. This is enforced by re-instantiating the `AndroidKeysetManager` on every `decrypt` call, which forces a check against the hardware-protected KEK.
 
-The core logic is managed by `EncryptionManager`. You can initialize a provider and start encrypting files or strings.
+#### `SecureKeyProvider`
+- **Strategy**: Standard envelope encryption.
+- **KEK**: An `AES-256-GCM` key stored in the `AndroidKeyStore`.
+- **DEK**: A Tink-managed `AES256_GCM` keyset, encrypted by the KEK.
+- **Note**: This is a solid, best-practice implementation for use cases that do not require lock-state encryption. It does not support encryption while the device is locked.
 
-```kotlin
-val manager = EncryptionManager(context)
-val provider = manager.getProvider(KeyProviderType.SECURE)
+#### `RawEncryptionProvider`
+- **Strategy**: An "anti-pattern" demonstrating "key-per-file" by importing software-generated keys into the Keystore.
+- **Behavior**: For each file, it generates a new software AES key, imports it into the `AndroidKeyStore` with the `unlockedDeviceRequired` flag, and embeds the key's unique alias in the file header.
+- **Purpose**: This provider serves as an educational example of an inefficient and difficult-to-manage approach that pollutes the Keystore. The necessity of a complex `destroy()` method that iterates through all keys with a specific prefix highlights these management challenges.
 
-// Encrypt a string
-val encrypted = provider.encryptString("Sensitive Data", "alias")
+### `EncryptionManager` & `MainActivity`
+- The `EncryptionManager` acts as a facade, providing a simple API for the `MainActivity` to interact with the different `EncryptionProvider`s.
+- The `MainActivity` provides a UI to run encryption/decryption tests for each provider, both in unlocked and locked states, and to display the results.
 
-// Decrypt a string
-val decrypted = provider.decryptString(encrypted, "alias")
-```
+### `DeviceAdminReceiver`
+- This component is required to programmatically lock the screen for the "Lock & Test" feature. The user must grant Device Administrator permissions to the app for this functionality to work.
 
-### Project Structure
+## 3. How to Build and Run
 
-app/src/main/java/.../encryption/api: Public interfaces and the EncryptionManager.
+1. Clone the repository.
+2. Open the project in a recent version of Android Studio.
+3. Build and run the app on an emulator or a physical device.
+4. Use the buttons on the screen to test each encryption provider.
+5. To use the "Lock & Test" feature, you may need to grant Device Administrator permissions to the app via the device's settings.
 
-app/src/main/java/.../encryption/internal: Core cryptographic implementations and key providers.
+## 4. License
 
-app/src/main/java/.../demo: Demonstration of usage, including encrypted SharedPreferences and UI.
+Copyright 2026 The Android Open Source Project
 
-### Security Considerations
-This library is designed to solve the complexity and fragmentation of custom cryptographic implementations on Android. By utilizing the Android Keystore and Tink, it provides a "secure by default" approach for enterprise-grade mobile applications.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-### License
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUTHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
