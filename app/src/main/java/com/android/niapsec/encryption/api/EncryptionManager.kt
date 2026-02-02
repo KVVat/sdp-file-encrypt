@@ -18,9 +18,10 @@ package com.android.niapsec.encryption.api
 import android.content.Context
 import android.util.Base64
 import com.android.niapsec.encryption.internal.EncryptionProvider
-import com.android.niapsec.encryption.internal.RawEncryptionProvider
 import com.android.niapsec.encryption.internal.TinkEncryptionProvider
 import com.android.niapsec.encryption.internal.keymanagement.HybridKeyProvider
+import com.android.niapsec.encryption.internal.keymanagement.RawHybridKeyProvider
+import com.android.niapsec.encryption.internal.keymanagement.RawKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.SecureKeyProvider
 import java.io.File
 import java.io.InputStream
@@ -31,19 +32,21 @@ import java.io.OutputStream
  */
 class EncryptionManager(
     context: Context,
-    masterKeyUri: String, // Used for both SECURE and INSECURE to derive a unique preference file name
+    masterKeyUri: String, // Used to derive a unique preference file name
     providerType: KeyProviderType = KeyProviderType.HYBRID,
-    unlockedDeviceRequired: Boolean = false, // Only applies to the SECURE provider
-    private val encryptionProvider: EncryptionProvider = when (providerType) {
-        KeyProviderType.RAW ->
-            RawEncryptionProvider(context, masterKeyUri.replace("android-keystore://", ""), unlockedDeviceRequired)
-        KeyProviderType.HYBRID ->
-            TinkEncryptionProvider(context,
+    unlockedDeviceRequired: Boolean = false, // Only applies to SECURE and RAW providers
+    private val encryptionProvider: EncryptionProvider = TinkEncryptionProvider(context,
+        when (providerType) {
+            KeyProviderType.RAW ->
+                RawKeyProvider(context, masterKeyUri.replace("android-keystore://", ""), unlockedDeviceRequired)
+            KeyProviderType.HYBRID ->
                 HybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
-            )
-        KeyProviderType.SECURE ->
-            TinkEncryptionProvider(context, SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}"))
-    }
+            KeyProviderType.SECURE ->
+                SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
+            KeyProviderType.RAW_HYBRID ->
+                RawHybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
+        }
+    )
 ) {
 
     fun destroy() {

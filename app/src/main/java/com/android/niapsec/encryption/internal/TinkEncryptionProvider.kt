@@ -51,10 +51,7 @@ class TinkEncryptionProvider(
      * Encrypts a plaintext string into a ciphertext byte array.
      */
     override fun encrypt(plaintext: String): ByteArray {
-
-
         val aead = keyProvider.getAead()
-
         val ciphertext = aead.encrypt(plaintext.toByteArray(), encryptionFlag)
         return encryptionFlag + ciphertext
     }

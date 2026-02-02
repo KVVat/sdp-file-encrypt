@@ -36,5 +36,10 @@ enum class KeyProviderType {
      * Uses the RawEncryptionProvider, which uses the standard Android Keystore and JCA
      * without the Tink library.
      */
-    RAW
+    RAW,
+
+    /**
+     * Uses the RawHybridKeyProvider, which implements a hybrid encryption scheme using raw JCA.
+     */
+    RAW_HYBRID
 }
