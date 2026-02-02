@@ -44,6 +44,8 @@ import java.security.GeneralSecurityException
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
 
+
+private fun AndroidKeysetManager.use(block: (AndroidKeysetManager) -> kotlin.Unit) {}
 class HybridKeyProvider(
     private val context: Context,
     private val masterKeyUri: String,
@@ -185,17 +187,18 @@ class HybridKeyProvider(
             }
 
             override fun decrypt(ciphertext: ByteArray, associatedData: ByteArray): ByteArray {
-                // This will require the device to be unlocked to access the private key.
 
-                val privateKeysetManager = AndroidKeysetManager.Builder()
+                //Don't hold the private key and Manager in memory.
+                AndroidKeysetManager.Builder()
                     .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
                     .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
                     .withMasterKeyUri(masterKeyUri)
-                    .build()
+                    .build().let { privateKeysetManager ->
+                        val privateKeysetHandle = privateKeysetManager.keysetHandle
+                        val hybridDecrypt = privateKeysetHandle.getPrimitive(HybridDecrypt::class.java)
+                        return hybridDecrypt.decrypt(ciphertext, associatedData)
+                    }
 
-                val privateKeysetHandle = privateKeysetManager.keysetHandle
-                val hybridDecrypt = privateKeysetHandle.getPrimitive(HybridDecrypt::class.java)
-                return hybridDecrypt.decrypt(ciphertext, associatedData)
             }
         }
     }
@@ -223,3 +226,5 @@ class HybridKeyProvider(
         }
     }
 }
+
+
