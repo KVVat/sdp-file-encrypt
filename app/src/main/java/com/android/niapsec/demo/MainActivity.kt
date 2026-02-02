@@ -61,27 +61,22 @@ class MainActivity : ComponentActivity() {
 
     private val hybridFileKeyUri = "android-keystore://hybrid_file_key"
     private val rawFileKeyUri = "android-keystore://raw_file_key"
+    private val rawHybridFileKeyUri = "android-keystore://raw_hybrid_file_key"
     private lateinit var testRunner: EncryptionTestRunner
 
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var compName: ComponentName
 
     private val hybridManager: EncryptionManager by lazy {
-        EncryptionManager(
-            this,
-            hybridFileKeyUri,
-            providerType = KeyProviderType.HYBRID,
-            unlockedDeviceRequired = true
-        )
+        EncryptionManager(this, hybridFileKeyUri, providerType = KeyProviderType.HYBRID, unlockedDeviceRequired = true)
     }
 
     private val rawManager: EncryptionManager by lazy {
-        EncryptionManager(
-            this,
-            rawFileKeyUri,
-            providerType = KeyProviderType.RAW,
-            unlockedDeviceRequired = true
-        )
+        EncryptionManager(this, rawFileKeyUri, providerType = KeyProviderType.RAW, unlockedDeviceRequired = true)
+    }
+
+    private val rawHybridManager: EncryptionManager by lazy {
+        EncryptionManager(this, rawHybridFileKeyUri, providerType = KeyProviderType.RAW_HYBRID, unlockedDeviceRequired = true)
     }
 
     private val testResults = mutableStateOf<List<TestResult>>(emptyList())
@@ -121,9 +116,7 @@ class MainActivity : ComponentActivity() {
             }
         ) { innerPadding ->
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
                 Column(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -131,16 +124,23 @@ class MainActivity : ComponentActivity() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     ProviderTestGroup(
-                        title = "HYBRID (P-521 KEK + AES-256 DEK)",
+                        title = "Tink HYBRID",
                         onTestClick = { runHybridFileTest() },
                         onLockAndTestClick = { lockAndTest(KeyProviderType.HYBRID) }
                     )
                     Spacer(modifier = Modifier.height(24.dp))
 
                     ProviderTestGroup(
-                        title = "RAW (JCA with AES-GCM)",
+                        title = "JCA RAW",
                         onTestClick = { runRawFileTest() },
                         onLockAndTestClick = { lockAndTest(KeyProviderType.RAW) }
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    ProviderTestGroup(
+                        title = "JCA RAW HYBRID",
+                        onTestClick = { runRawHybridFileTest() },
+                        onLockAndTestClick = { lockAndTest(KeyProviderType.RAW_HYBRID) }
                     )
 
                     // Cleanup
@@ -197,11 +197,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runHybridFileTest() {
-        testResults.value = testRunner.runFullTest(hybridManager, "HybridFileTest")
+        testResults.value = testRunner.runFullTest(hybridManager, "TinkHybridFileTest")
     }
 
     private fun runRawFileTest() {
-        testResults.value = testRunner.runFullTest(rawManager, "RawFileTest")
+        testResults.value = testRunner.runFullTest(rawManager, "JcaRawFileTest")
+    }
+
+    private fun runRawHybridFileTest() {
+        testResults.value = testRunner.runFullTest(rawHybridManager, "JcaRawHybridFileTest")
     }
 
     private fun lockAndTest(providerType: KeyProviderType) {
@@ -213,6 +217,7 @@ class MainActivity : ComponentActivity() {
         val manager = when (providerType) {
             KeyProviderType.HYBRID -> hybridManager
             KeyProviderType.RAW -> rawManager
+            KeyProviderType.RAW_HYBRID -> rawHybridManager
             else -> throw IllegalArgumentException("Unsupported provider type: $providerType")
         }
 
@@ -221,7 +226,7 @@ class MainActivity : ComponentActivity() {
 
         Handler(Looper.getMainLooper()).postDelayed({
             Log.d("LockAndTest", "Running $providerType test after delay...")
-            val shouldFail = true // All secure providers should fail when locked
+            val shouldFail = true // All providers that require user auth should fail when locked
             testResults.value = testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
         }, 5000)
     }
@@ -235,9 +240,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearAll() {
-        // Destroy file-based keys
+        // Destroy all keys and clear results
         hybridManager.destroy()
         rawManager.destroy()
+        rawHybridManager.destroy()
         testResults.value = emptyList()
 
         Log.d("ClearData", "All keys and data have been destroyed.")

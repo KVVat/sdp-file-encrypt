@@ -45,7 +45,6 @@ import java.security.KeyStore
 import javax.crypto.KeyGenerator
 
 
-private fun AndroidKeysetManager.use(block: (AndroidKeysetManager) -> kotlin.Unit) {}
 class HybridKeyProvider(
     private val context: Context,
     private val masterKeyUri: String,
