@@ -63,6 +63,7 @@ class EncryptionTestRunner(private val context: Context) {
     private fun testEncryption(encryptionManager: EncryptionManager, file: File, testName: String, reverseResult: Boolean): TestResult {
         return try {
             Log.d(testName, "Attempting encryption...")
+
             encryptionManager.encryptToFile(file).use { it.write(ORIGINAL_TEXT.toByteArray()) }
             val passed = !reverseResult
             val message = if (passed) "Encryption successful" else "Encryption expected to fail but succeeded"

@@ -13,10 +13,10 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 */
-
 package com.android.niapsec.encryption.internal.keymanagement
 
 import com.google.crypto.tink.Aead
+import com.google.crypto.tink.StreamingAead
 
 /**
  * A common interface for key providers, allowing different underlying key management
@@ -28,8 +28,14 @@ interface KeyProvider {
      */
     fun getAead(): Aead
 
+    /**
+     * Retrieves the StreamingAead primitive for performing streaming cryptographic operations.
+     * Returns null if streaming is not supported by this provider.
+     */
+    fun getStreamingAead(): StreamingAead? = null
 
-    fun getUnlockDeviceRequired():Boolean
+    fun getUnlockDeviceRequired(): Boolean
+
     /**
      * Destroys all cryptographic material associated with this provider.
      */

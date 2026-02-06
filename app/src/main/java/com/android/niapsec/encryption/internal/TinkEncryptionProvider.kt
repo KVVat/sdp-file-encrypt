@@ -21,6 +21,8 @@ import com.android.niapsec.encryption.internal.keymanagement.KeyProvider
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.GeneralSecurityException
@@ -34,15 +36,33 @@ class TinkEncryptionProvider(
 
     /**
      * Encrypts with the given key provider for file operations.
+     * Uses StreamingAead if available, otherwise falls back to in-memory processing.
      */
     override fun encrypt(file: File): OutputStream {
-        val aead = keyProvider.getAead()
-        return object : ByteArrayOutputStream() {
-            override fun close() {
-                super.close()
-                val plaintext = toByteArray()
-                val ciphertext = aead.encrypt(plaintext, encryptionFlag)
-                file.writeBytes(encryptionFlag + ciphertext)
+        val streamingAead = keyProvider.getStreamingAead()
+
+        if (streamingAead != null) {
+            // --- Streaming Mode ---
+            val fileOutputStream = FileOutputStream(file)
+            try {
+                // Write the encryption flag first
+                fileOutputStream.write(encryptionFlag)
+                // Return the encrypting stream wrapper
+                return streamingAead.newEncryptingStream(fileOutputStream, encryptionFlag)
+            } catch (e: Exception) {
+                fileOutputStream.close()
+                throw e
+            }
+        } else {
+            // --- Legacy / In-Memory Mode ---
+            val aead = keyProvider.getAead()
+            return object : ByteArrayOutputStream() {
+                override fun close() {
+                    super.close()
+                    val plaintext = toByteArray()
+                    val ciphertext = aead.encrypt(plaintext, encryptionFlag)
+                    file.writeBytes(encryptionFlag + ciphertext)
+                }
             }
         }
     }
@@ -57,12 +77,33 @@ class TinkEncryptionProvider(
     }
 
     /**
-     * Smart decryption method for file operations.
+     * Decrypts a file.
+     * Uses StreamingAead if available, otherwise falls back to in-memory processing.
      */
     override fun decrypt(file: File): InputStream {
-        val fileBytes = file.readBytes()
-        val plaintext = decrypt(fileBytes)
-        return ByteArrayInputStream(plaintext.toByteArray())
+        val streamingAead = keyProvider.getStreamingAead()
+
+        if (streamingAead != null) {
+            // --- Streaming Mode ---
+            val fileInputStream = FileInputStream(file)
+            try {
+                // Read and verify the encryption flag
+                val flag = ByteArray(encryptionFlag.size)
+                if (fileInputStream.read(flag) != flag.size || !flag.contentEquals(encryptionFlag)) {
+                    throw GeneralSecurityException("Invalid encryption flag found in data.")
+                }
+                // Return the decrypting stream wrapper
+                return streamingAead.newDecryptingStream(fileInputStream, encryptionFlag)
+            } catch (e: Exception) {
+                fileInputStream.close()
+                throw e
+            }
+        } else {
+            // --- Legacy / In-Memory Mode ---
+            val fileBytes = file.readBytes()
+            val plaintext = decrypt(fileBytes)
+            return ByteArrayInputStream(plaintext.toByteArray())
+        }
     }
 
     /**
