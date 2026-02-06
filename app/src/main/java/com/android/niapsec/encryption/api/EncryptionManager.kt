@@ -32,9 +32,9 @@ import java.io.OutputStream
  */
 class EncryptionManager(
     context: Context,
-    masterKeyUri: String, // Used to derive a unique preference file name
+    masterKeyUri: String,
     providerType: KeyProviderType = KeyProviderType.HYBRID,
-    unlockedDeviceRequired: Boolean = false, // Only applies to SECURE and RAW providers
+    unlockedDeviceRequired: Boolean = false,
     private val encryptionProvider: EncryptionProvider = TinkEncryptionProvider(context,
         when (providerType) {
             KeyProviderType.RAW ->
@@ -54,17 +54,33 @@ class EncryptionManager(
     }
 
     /**
-     * Encrypts a file using the configured key provider.
+     * Encrypts a file using in-memory processing.
+     * Suitable for small files.
      */
     fun encryptToFile(file: File): OutputStream {
         return encryptionProvider.encrypt(file)
     }
 
     /**
-     * Decrypts the file using the configured key provider.
+     * Decrypts a file using in-memory processing.
      */
     fun decryptFromFile(file: File): InputStream {
         return encryptionProvider.decrypt(file)
+    }
+
+    /**
+     * Encrypts a file using streaming processing.
+     * Suitable for large files. Throws UnsupportedOperationException if the provider doesn't support streaming.
+     */
+    fun encryptToFileStream(file: File): OutputStream {
+        return encryptionProvider.encryptStream(file)
+    }
+
+    /**
+     * Decrypts a file using streaming processing.
+     */
+    fun decryptFromFileStream(file: File): InputStream {
+        return encryptionProvider.decryptStream(file)
     }
 
     /**

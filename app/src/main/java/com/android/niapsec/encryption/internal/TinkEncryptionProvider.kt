@@ -34,81 +34,81 @@ class TinkEncryptionProvider(
 
     private val encryptionFlag = byteArrayOf(0x0)
 
-    /**
-     * Encrypts with the given key provider for file operations.
-     * Uses StreamingAead if available, otherwise falls back to in-memory processing.
-     */
-    override fun encrypt(file: File): OutputStream {
-        val streamingAead = keyProvider.getStreamingAead()
+    // --- In-Memory Operations (Aead) ---
 
-        if (streamingAead != null) {
-            // --- Streaming Mode ---
-            val fileOutputStream = FileOutputStream(file)
-            try {
-                // Write the encryption flag first
-                fileOutputStream.write(encryptionFlag)
-                // Return the encrypting stream wrapper
-                return streamingAead.newEncryptingStream(fileOutputStream, encryptionFlag)
-            } catch (e: Exception) {
-                fileOutputStream.close()
-                throw e
-            }
-        } else {
-            // --- Legacy / In-Memory Mode ---
-            val aead = keyProvider.getAead()
-            return object : ByteArrayOutputStream() {
-                override fun close() {
-                    super.close()
-                    val plaintext = toByteArray()
-                    val ciphertext = aead.encrypt(plaintext, encryptionFlag)
-                    file.writeBytes(encryptionFlag + ciphertext)
-                }
+    override fun encrypt(file: File): OutputStream {
+        val aead = keyProvider.getAead()
+        // Returns a ByteArrayOutputStream that encrypts on close() and writes to file
+        return object : ByteArrayOutputStream() {
+            override fun close() {
+                super.close()
+                val plaintext = toByteArray()
+                val ciphertext = aead.encrypt(plaintext, encryptionFlag)
+                file.writeBytes(encryptionFlag + ciphertext)
             }
         }
     }
 
-    /**
-     * Encrypts a plaintext string into a ciphertext byte array.
-     */
+    override fun decrypt(file: File): InputStream {
+        val fileBytes = file.readBytes()
+        if (fileBytes.isEmpty()) {
+            throw GeneralSecurityException("Cannot decrypt empty file.")
+        }
+        val flag = fileBytes.copyOfRange(0, 1)
+        val actualCiphertext = fileBytes.copyOfRange(1, fileBytes.size)
+
+        if (!flag.contentEquals(encryptionFlag)) {
+            throw GeneralSecurityException("Invalid encryption flag found in data.")
+        }
+
+        val aead = keyProvider.getAead()
+        val plaintext = aead.decrypt(actualCiphertext, encryptionFlag)
+        return ByteArrayInputStream(plaintext)
+    }
+
+    // --- Streaming Operations (StreamingAead) ---
+
+    override fun encryptStream(file: File): OutputStream {
+        val streamingAead = keyProvider.getStreamingAead()
+            ?: throw UnsupportedOperationException("Streaming encryption is not supported by the current KeyProvider.")
+
+        val fileOutputStream = FileOutputStream(file)
+        try {
+            // Write the encryption flag first to maintain format consistency
+            fileOutputStream.write(encryptionFlag)
+            return streamingAead.newEncryptingStream(fileOutputStream, encryptionFlag)
+        } catch (e: Exception) {
+            fileOutputStream.close()
+            throw e
+        }
+    }
+
+    override fun decryptStream(file: File): InputStream {
+        val streamingAead = keyProvider.getStreamingAead()
+            ?: throw UnsupportedOperationException("Streaming decryption is not supported by the current KeyProvider.")
+
+        val fileInputStream = FileInputStream(file)
+        try {
+            // Read and verify the encryption flag
+            val flag = ByteArray(encryptionFlag.size)
+            if (fileInputStream.read(flag) != flag.size || !flag.contentEquals(encryptionFlag)) {
+                throw GeneralSecurityException("Invalid encryption flag found in data.")
+            }
+            return streamingAead.newDecryptingStream(fileInputStream, encryptionFlag)
+        } catch (e: Exception) {
+            fileInputStream.close()
+            throw e
+        }
+    }
+
+    // --- String / Misc Operations ---
+
     override fun encrypt(plaintext: String): ByteArray {
         val aead = keyProvider.getAead()
         val ciphertext = aead.encrypt(plaintext.toByteArray(), encryptionFlag)
         return encryptionFlag + ciphertext
     }
 
-    /**
-     * Decrypts a file.
-     * Uses StreamingAead if available, otherwise falls back to in-memory processing.
-     */
-    override fun decrypt(file: File): InputStream {
-        val streamingAead = keyProvider.getStreamingAead()
-
-        if (streamingAead != null) {
-            // --- Streaming Mode ---
-            val fileInputStream = FileInputStream(file)
-            try {
-                // Read and verify the encryption flag
-                val flag = ByteArray(encryptionFlag.size)
-                if (fileInputStream.read(flag) != flag.size || !flag.contentEquals(encryptionFlag)) {
-                    throw GeneralSecurityException("Invalid encryption flag found in data.")
-                }
-                // Return the decrypting stream wrapper
-                return streamingAead.newDecryptingStream(fileInputStream, encryptionFlag)
-            } catch (e: Exception) {
-                fileInputStream.close()
-                throw e
-            }
-        } else {
-            // --- Legacy / In-Memory Mode ---
-            val fileBytes = file.readBytes()
-            val plaintext = decrypt(fileBytes)
-            return ByteArrayInputStream(plaintext.toByteArray())
-        }
-    }
-
-    /**
-     * Decrypts a ciphertext byte array into a plaintext string.
-     */
     override fun decrypt(ciphertext: ByteArray): String {
         if (ciphertext.isEmpty()) {
             throw GeneralSecurityException("Cannot decrypt empty data.")
