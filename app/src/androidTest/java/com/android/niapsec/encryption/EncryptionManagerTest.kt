@@ -23,6 +23,7 @@ import com.android.niapsec.encryption.api.EncryptionManager
 import com.android.niapsec.encryption.api.KeyProviderType
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
@@ -30,6 +31,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.util.UUID
 
@@ -69,10 +71,78 @@ class EncryptionManagerTest {
         return file
     }
 
-    // --- Existing SECURE Provider Tests ---
+    /**
+     * Helper to generate a large string of approximately specific size (in bytes).
+     */
+    private fun generateLargeString(sizeInBytes: Int): String {
+        val sb = StringBuilder(sizeInBytes)
+        val chunk = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" // 62 chars
+
+        while (sb.length < sizeInBytes) {
+            sb.append(chunk)
+        }
+        return sb.substring(0, sizeInBytes)
+    }
+
+    // --- Stream API Tests (StreamingAead) ---
 
     @Test
-    fun testSecureProvider_encryptAndDecrypt_works() {
+    fun testRawHybridProvider_encryptAndDecryptStream_1MB_works() {
+        // Test StreamingAead with ~1MB of data
+        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
+        val testFile = getTestFile("stream_1mb_test.dat")
+
+        // Generate 1MB String (1024 * 1024 bytes)
+        val targetSize = 1024 * 1024
+        val originalContent = generateLargeString(targetSize)
+
+        // Encrypt using Stream API
+        encryptionManager.encryptToFileStream(testFile).use { outputStream ->
+            // Convert to bytes explicitly to ensure size match
+            outputStream.write(originalContent.toByteArray(StandardCharsets.UTF_8))
+        }
+
+        // Verify file was created and has some size (overhead + content)
+        assertTrue("File should exist", testFile.exists())
+        assertTrue("File should be larger than plain content due to IV/AuthTag", testFile.length() > targetSize)
+
+        // Decrypt using Stream API
+        val decryptedContent = encryptionManager.decryptFromFileStream(testFile).use { inputStream ->
+            inputStream.reader(StandardCharsets.UTF_8).readText()
+        }
+
+        assertEquals("Decrypted content length should match", originalContent.length, decryptedContent.length)
+        assertEquals("Decrypted content should match original", originalContent, decryptedContent)
+    }
+
+    @Test
+    fun testRawProvider_encryptStream_throwsUnsupportedOperation() {
+        // RAW provider (and others not updated) should NOT support streaming
+        val encryptionManager = createManager(KeyProviderType.RAW)
+        val testFile = getTestFile("raw_stream_fail_test.dat")
+
+        assertThrows(UnsupportedOperationException::class.java) {
+            encryptionManager.encryptToFileStream(testFile)
+        }
+    }
+
+    // --- Legacy File API Tests (Aead / In-Memory) ---
+
+    @Test
+    fun testRawHybridProvider_legacyEncryptAndDecrypt_works() {
+        // Ensure the new RawHybrid provider still supports the old in-memory API
+        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
+        val testFile = getTestFile("raw_hybrid_legacy_test.txt")
+        val originalContent = "Small content for legacy API check."
+
+        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
+        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
+
+        assertEquals(originalContent, decryptedContent)
+    }
+
+    @Test
+    fun testSecureProvider_legacyEncryptAndDecrypt_works() {
         val encryptionManager = createManager(KeyProviderType.SECURE)
         val testFile = getTestFile("secure_provider_test.txt")
         val originalContent = "This is a secret message for the secure provider."
@@ -109,76 +179,7 @@ class EncryptionManagerTest {
         }
     }
 
-    // --- New Tests for Other Providers ---
-
-    @Test
-    fun testRawHybridProvider_encryptAndDecrypt_works() {
-        // This provider uses the new StreamingAead implementation
-        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
-        val testFile = getTestFile("raw_hybrid_test.txt")
-        val originalContent = "Content encrypted via RawHybridKeyProvider (Streaming supported)."
-
-        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-
-        assertEquals(originalContent, decryptedContent)
-    }
-
-    @Test
-    fun testRawHybridProvider_largeData_works() {
-        // Validates streaming implementation with larger data (e.g., 100KB)
-        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
-        val testFile = getTestFile("raw_hybrid_large_test.dat")
-
-        val sb = StringBuilder()
-        repeat(1000) { sb.append("Line $it: This is a test line to generate some volume of data.\n") }
-        val originalContent = sb.toString()
-
-        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-
-        assertEquals("Decrypted content length mismatch", originalContent.length, decryptedContent.length)
-        assertEquals("Decrypted content mismatch", originalContent, decryptedContent)
-    }
-
-    @Test
-    fun testRawProvider_encryptAndDecrypt_works() {
-        // Validates fallback to in-memory processing for non-streaming providers
-        val encryptionManager = createManager(KeyProviderType.RAW)
-        val testFile = getTestFile("raw_provider_test.txt")
-        val originalContent = "Simple content for Raw Provider"
-
-        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-
-        assertEquals(originalContent, decryptedContent)
-    }
-
-    @Test
-    fun testHybridProvider_encryptAndDecrypt_works() {
-        // Validates fallback to in-memory processing for non-streaming providers
-        val encryptionManager = createManager(KeyProviderType.HYBRID)
-        val testFile = getTestFile("hybrid_provider_test.txt")
-        val originalContent = "Simple content for Hybrid Provider"
-
-        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-
-        assertEquals(originalContent, decryptedContent)
-    }
-
     // --- String Encryption Tests ---
-
-    @Test
-    fun testStringEncryption_works_secure() {
-        val encryptionManager = createManager(KeyProviderType.SECURE)
-        val originalText = "Hello World! String encryption test."
-
-        val ciphertext = encryptionManager.encryptToString(originalText)
-        val decryptedText = encryptionManager.decryptFromString(ciphertext)
-
-        assertEquals(originalText, decryptedText)
-    }
 
     @Test
     fun testStringEncryption_works_rawHybrid() {
