@@ -43,11 +43,20 @@ class RawHybridKeyProvider(
     private val keysetPrefName: String
 ) : KeyProvider {
 
+
+
     // ... (既存の定数やinitブロック、generateAndStoreKeyPairIfNeeded等は変更なし) ...
     private val masterKeyAlias = masterKeyUri.removePrefix("android-keystore://")
     private val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-    private val prefs = context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE)
     val unlockedDeviceRequired: Boolean = _unlockedDeviceRequired
+
+    private val storageContext: Context = if (!unlockedDeviceRequired) {
+        context.createDeviceProtectedStorageContext()
+    } else {
+        context
+    }
+
+    private val prefs = storageContext.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE)
 
     private companion object {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
@@ -68,21 +77,39 @@ class RawHybridKeyProvider(
     // ... (generateAndStoreKeyPairIfNeeded, loadRecipientPublicKey, loadRecipientPrivateKey, hkdfDeriveはそのまま) ...
 
     private fun generateAndStoreKeyPairIfNeeded() {
-        if (!keyStore.containsAlias(masterKeyAlias)) {
+
+        if (keyStore.containsAlias(masterKeyAlias)) {
+            if (!prefs.contains(KEY_PUBLIC_KEY_PREF)) {
+                try {
+                    val entry = keyStore.getEntry(masterKeyAlias, null) as? KeyStore.PrivateKeyEntry
+                    entry?.certificate?.publicKey?.let { publicKey ->
+                        savePublicKey(publicKey)
+                    }
+                } catch (e: Exception) {
+                    // Key might be broken!, only record the log in this time.
+                }
+            }
+        } else {
+            // 新規生成
             val kpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM, ANDROID_KEYSTORE)
             val spec = KeyGenParameterSpec.Builder(
                 masterKeyAlias,
                 KeyProperties.PURPOSE_AGREE_KEY
             )
                 .setDigests(KeyProperties.DIGEST_SHA256)
-                .setUnlockedDeviceRequired(unlockedDeviceRequired)
+                .setUnlockedDeviceRequired(unlockedDeviceRequired) // ここで false が渡されれば BFU 対応キーとなる
                 .build()
 
             kpg.initialize(spec)
             val keyPair = kpg.generateKeyPair()
-            val encodedKey = Base64.encodeToString(keyPair.public.encoded, Base64.NO_WRAP)
-            prefs.edit { putString(KEY_PUBLIC_KEY_PREF, encodedKey) }
+
+            savePublicKey(keyPair.public)
         }
+    }
+
+    private fun savePublicKey(publicKey: PublicKey) {
+        val encodedKey = Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
+        prefs.edit { putString(KEY_PUBLIC_KEY_PREF, encodedKey) }
     }
 
     private fun loadRecipientPublicKey(): PublicKey {
