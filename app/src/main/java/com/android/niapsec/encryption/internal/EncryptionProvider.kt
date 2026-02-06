@@ -26,9 +26,16 @@ import java.io.OutputStream
 interface EncryptionProvider {
 
     /**
-     * Encrypts a file and returns an OutputStream to write the plaintext to.
+     * Encrypts a file using in-memory processing (Aead).
+     * Best for small files.
      */
     fun encrypt(file: File): OutputStream
+
+    /**
+     * Encrypts a file using streaming processing (StreamingAead).
+     * Best for large files. Throws exception if not supported by the provider.
+     */
+    fun encryptStream(file: File): OutputStream
 
     /**
      * Encrypts a plaintext string into a ciphertext byte array.
@@ -36,9 +43,15 @@ interface EncryptionProvider {
     fun encrypt(plaintext: String): ByteArray
 
     /**
-     * Decrypts a file and returns an InputStream to read the plaintext from.
+     * Decrypts a file using in-memory processing (Aead).
      */
     fun decrypt(file: File): InputStream
+
+    /**
+     * Decrypts a file using streaming processing (StreamingAead).
+     * Throws exception if not supported by the provider.
+     */
+    fun decryptStream(file: File): InputStream
 
     /**
      * Decrypts a ciphertext byte array into a plaintext string.
