@@ -70,7 +70,87 @@ Unlike standard high-level wrappers, our `RawHybridKeyProvider` uses raw JCA pri
 4. Use the buttons on the screen to test each encryption provider.
 5. To use the "Lock & Test" feature, you may need to grant Device Administrator permissions to the app via the device's settings.
 
-## 5. License
+## 5. Security Verification Procedure (Direct Boot & Authentication)
+
+This section describes how to verify the application's compliance with **FDP_DAR_EXT.2** (Encryption in Locked State) and **FIA_UAU_EXT.1** (Authentication for Decryption) using the included Test Harness.
+
+### Prerequisites
+* Android Device running Android 8.0+ (Pixel device recommended).
+* Screen Lock (PIN/Pattern/Password) **MUST** be set up.
+* ADB tool installed and authorized.
+
+### Verification Steps
+
+**Step 1: Install and Initialize**
+1.  Install the application (`app-debug.apk`) on the target device.
+2.  Launch the app once and ensure the screen is unlocked to allow initial key generation.
+3.  Force stop the app to clear memory state:
+    ```bash
+    adb shell am force-stop com.android.niapsec
+    ```
+
+**Step 2: Reboot into "Before First Unlock" (BFU) State**
+1.  Reboot the device using ADB or the power button.
+    ```bash
+    adb reboot
+    ```
+2.  **CRITICAL:** When the device boots up, **DO NOT enter your PIN/Password**.
+    * The device must remain in the "Locked" state.
+    * Verify the state using:
+      ```bash
+      adb shell dumpsys activity | grep "mUserUnlocked"
+      ```
+      *Expected Output:* `mUserUnlocked=false`
+
+**Step 3: Execute the Test Harness**
+Trigger the diagnostic receiver via ADB. This component is marked as `directBootAware` and will run even when the user is locked.
+
+1.  Start log monitoring in a terminal:
+    ```bash
+    adb logcat -c
+    adb logcat -s DirectBootTest
+    ```
+
+2.  In a separate terminal, send the test broadcast:
+    ```bash
+    adb shell am broadcast -a com.android.niapsec.ACTION_TEST_CRYPTO -n com.android.niapsec/.demo.DirectBootTestReceiver
+    ```
+
+**Step 4: Verify Pass/Fail Criteria (Log Analysis)**
+
+Check the log output for the following verification points:
+
+#### A. Environment Validation
+* `User State: LOCKED (BFU State)` -> **MUST** be Locked.
+* `Storage Context: Device Protected (DE)` -> **MUST** use DE storage.
+
+#### B. RawHybridKeyProvider (JCA Implementation)
+* `[RawHybrid_JCA] Attempting Encryption...`
+* `[RawHybrid_JCA] SUCCESS: Encryption completed.` -> **PASS (FDP_DAR_EXT.2 Satisfied)**
+    * *Rationale:* Public Key was successfully retrieved from DE storage and used for encryption.
+* `[RawHybrid_JCA] Attempting Decryption...`
+* `[RawHybrid_JCA] SUCCESS: Decryption failed as expected during lock.` -> **PASS (FIA_UAU_EXT.1 Satisfied)**
+    * *Rationale:* Access to the Private Key (Android Keystore) was correctly blocked by the OS because the user is not authenticated.
+
+#### C. HybridKeyProvider (Tink Implementation)
+* `[Hybrid_Tink] Attempting Encryption...`
+* `[Hybrid_Tink] SUCCESS: Encryption completed.` -> **PASS (FDP_DAR_EXT.2 Satisfied)**
+* `[Hybrid_Tink] Attempting Decryption...`
+* `[Hybrid_Tink] SUCCESS: Decryption failed as expected during lock.` -> **PASS (FIA_UAU_EXT.1 Satisfied)**
+
+---
+
+### Step 5: Verify "After First Unlock" (AFU) Behavior (Optional)
+1.  Unlock the screen (enter PIN).
+2.  Run the broadcast command again:
+    ```bash
+    adb shell am broadcast -a com.android.niapsec.ACTION_TEST_CRYPTO -n com.android.niapsec/.demo.DirectBootTestReceiver
+    ```
+3.  Verify logs:
+    * `User State: UNLOCKED (AFU State)`
+    * `SUCCESS: Decryption succeeded and data matches.` -> **PASS** (Normal operation restored).
+
+## 6. License
 
 Copyright 2026 The Android Open Source Project
 
