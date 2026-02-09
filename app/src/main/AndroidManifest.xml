@@ -37,6 +37,15 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".demo.DirectBootTestReceiver"
+            android:directBootAware="true"  android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.niapsec.ACTION_TEST_CRYPTO" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>
