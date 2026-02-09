@@ -44,7 +44,25 @@ import java.security.GeneralSecurityException
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
 
-
+/**
+ * [Security Component: Tink-based Hybrid Encryption]
+ * * Implementation relies on Google Tink's `AndroidKeysetManager` and `KeysetHandle`.
+ * * This class leverages validated library implementations for cryptographic schemes.
+ *
+ * [Compliance Note]
+ * * **FCS_STG_EXT.2 (Encrypted Key Storage):**
+ * - SATISFIED: Private keysets are stored in SharedPreferences wrapped (encrypted) by a Master Key
+ * held in the Android Keystore. The keyset is never stored in plaintext on the filesystem.
+ *
+ * * **FDP_DAR_EXT.2 (Sensitive Data Encryption):**
+ * - SATISFIED: Implements public key encryption (ECIES-AEAD-HKDF) allowing data ingestion and protection
+ * while the device is in a Locked State (B/F/U states).
+ *
+ * * **FCS_CKM_EXT.4 (Key Destruction):**
+ * - PARTIALLY SATISFIED (Storage Only): `destroy()` removes the encrypted keyset and the Master Key alias.
+ * - NOTE: Volatile memory zeroization relies on the underlying Tink library implementation and JVM
+ * Garbage Collection. (For explicit memory zeroization requirements, see `RawHybridKeyProvider`).
+ */
 class HybridKeyProvider(
     private val context: Context,
     private val masterKeyUri: String,
@@ -166,6 +184,7 @@ class HybridKeyProvider(
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
+            // Enforcing FIA_UAU_EXT.1 when set it
             if (unlockedDeviceRequired) {
                 specBuilder.setUnlockedDeviceRequired(true)
             }
@@ -181,12 +200,13 @@ class HybridKeyProvider(
         val hybridEncrypt = publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
 
         return object : Aead {
+            // [FDP_DAR_EXT.2] Public key encryption allows operation in Locked State
             override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
                 return hybridEncrypt.encrypt(plaintext, associatedData)
             }
 
             override fun decrypt(ciphertext: ByteArray, associatedData: ByteArray): ByteArray {
-
+                // [FCS_STG_EXT.2] Private key is wrapped by Android Keystore (Master Key)
                 //Don't hold the private key and Manager in memory.
                 AndroidKeysetManager.Builder()
                     .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
