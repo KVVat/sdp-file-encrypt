@@ -50,6 +50,10 @@ import javax.crypto.KeyGenerator
  * * This class leverages validated library implementations for cryptographic schemes.
  *
  * [Compliance Note]
+ * * **FCS_CKM.2/LOCKED (Cryptographic Key Establishment):**
+ * - SATISFIED: Uses Tink's ECIES-AEAD-HKDF implementation to establish keys for encryption
+ * even while the device is in a Locked State.
+ *
  * * **FCS_STG_EXT.2 (Encrypted Key Storage):**
  * - SATISFIED: Private keysets are stored in SharedPreferences wrapped (encrypted) by a Master Key
  * held in the Android Keystore. The keyset is never stored in plaintext on the filesystem.
@@ -203,6 +207,8 @@ class HybridKeyProvider(
 
     override fun getAead(): Aead {
 
+        // [FCS_CKM.2/LOCKED] & [FDP_DAR_EXT.2]
+        // Public key from Keyset allows key establishment and encryption in Locked State.
         // This does not require the device to be unlocked as the public key is stored in cleartext.
         val publicKeysetHandle = getPublicKeysetHandle()
         val hybridEncrypt = publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
