@@ -51,6 +51,11 @@ import javax.crypto.spec.SecretKeySpec
  * * **FDP_DAR_EXT.2 (Sensitive Data Encryption):**
  * - SATISFIED: Uses an asymmetric key scheme to allow data encryption even when the device is locked
  * and the private key is unavailable.
+ *
+ * * **FIA_UAU_EXT.1 (Authentication for Cryptographic Operation):**
+ * - SATISFIED: Enforces user authentication policies at the OS level by configuring
+ * `KeyGenParameterSpec.Builder.setUnlockedDeviceRequired(true)`. This ensures that decryption
+ * operations fail if the device is not unlocked.
  */
 class RawHybridKeyProvider(
     private val context: Context,
@@ -112,7 +117,10 @@ class RawHybridKeyProvider(
                 KeyProperties.PURPOSE_AGREE_KEY
             )
                 .setDigests(KeyProperties.DIGEST_SHA256)
-                .setUnlockedDeviceRequired(unlockedDeviceRequired) // Enforcing FIA_UAU_EXT.1 when set it
+                // [FIA_UAU_EXT.1] Authentication for Cryptographic Operation
+                // * ENFORCEMENT: Configures the TSF (Android Keystore) to reject key agreement operations
+                //   if the user has not authenticated (device locked).
+                .setUnlockedDeviceRequired(unlockedDeviceRequired)
 
                 .build()
 

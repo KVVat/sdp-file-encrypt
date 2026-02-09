@@ -68,6 +68,7 @@ class SecureKeyProvider(
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
+            // [FIA_UAU_EXT.1] Enforce user authentication for symmetric key usage
             if (unlockedDeviceRequired) {
                 specBuilder.setUnlockedDeviceRequired(true)
             }
