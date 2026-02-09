@@ -208,8 +208,8 @@ class HybridKeyProvider(
         val hybridEncrypt = publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
 
         return object : Aead {
-            // [FDP_DAR_EXT.2] Public key encryption allows operation in Locked State
             override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
+                // [FDP_DAR_EXT.2] Public key encryption allows operation in Locked State
                 return hybridEncrypt.encrypt(plaintext, associatedData)
             }
 
