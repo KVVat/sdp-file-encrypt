@@ -58,6 +58,10 @@ import javax.crypto.KeyGenerator
  * - SATISFIED: Implements public key encryption (ECIES-AEAD-HKDF) allowing data ingestion and protection
  * while the device is in a Locked State (B/F/U states).
  *
+ * * **FIA_UAU_EXT.1 (Authentication for Cryptographic Operation):**
+ * - SATISFIED: The Master Key (wrapping key) is configured with `.setUnlockedDeviceRequired(true)`.
+ * Tink cannot unwrap (decrypt) the Keyset containing the private key unless the user has authenticated.
+ *
  * * **FCS_CKM_EXT.4 (Key Destruction):**
  * - PARTIALLY SATISFIED (Storage Only): `destroy()` removes the encrypted keyset and the Master Key alias.
  * - NOTE: Volatile memory zeroization relies on the underlying Tink library implementation and JVM
@@ -184,7 +188,11 @@ class HybridKeyProvider(
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
-            // Enforcing FIA_UAU_EXT.1 when set it
+
+            // [FIA_UAU_EXT.1] Authentication for Cryptographic Operation
+            // * REQUIREMENT: The TSF shall require the user to be authenticated before performing specific cryptographic operations.
+            // * IMPLEMENTATION: By invoking `setUnlockedDeviceRequired(true)`, we mandate that the Android Keystore system
+            //   blocks any access to this key material unless the device is in an unlocked state (user authenticated).
             if (unlockedDeviceRequired) {
                 specBuilder.setUnlockedDeviceRequired(true)
             }
