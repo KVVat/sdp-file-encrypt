@@ -78,6 +78,7 @@ class HybridKeyProvider(
     private val keysetPrefName: String
 ) : KeyProvider {
 
+    private val deviceProtectedContext = context.createDeviceProtectedStorageContext()
     companion object {
         val P521_AES256_GCM_TEMPLATE: KeyTemplate by lazy {
             val demAeadKeyFormat = AesGcmKeyFormat.newBuilder().setKeySize(32).build()
@@ -120,7 +121,7 @@ class HybridKeyProvider(
     }
 
     private fun getPublicKeysetHandle(): KeysetHandle {
-        val prefs = context.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
+        val prefs = deviceProtectedContext.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
         var serializedPublicKeyset = prefs.getString(PUBLIC_KEYSET_KEY, null)
 
         if (serializedPublicKeyset == null) {
@@ -142,7 +143,7 @@ class HybridKeyProvider(
             // Get the private keyset, which may trigger key generation if it doesn't exist
             val privateKeysetManager: AndroidKeysetManager by lazy {
                 AndroidKeysetManager.Builder()
-                    .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
+                    .withSharedPref( deviceProtectedContext, PRIVATE_KEYSET_NAME, keysetPrefName)
                     .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
                     .withMasterKeyUri(masterKeyUri)
                     .build()
@@ -158,7 +159,7 @@ class HybridKeyProvider(
             val serializedPublicKeyset = outputStream.toString()
 
             // Manually write the serialized public keyset to a separate shared preference.
-            context.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
+            deviceProtectedContext.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
                 .edit(commit = true) {
                     putString(PUBLIC_KEYSET_KEY, serializedPublicKeyset)
                 }
@@ -223,7 +224,7 @@ class HybridKeyProvider(
                 // [FCS_STG_EXT.2] Private key is wrapped by Android Keystore (Master Key)
                 //Don't hold the private key and Manager in memory.
                 AndroidKeysetManager.Builder()
-                    .withSharedPref(context, PRIVATE_KEYSET_NAME, keysetPrefName)
+                    .withSharedPref( deviceProtectedContext, PRIVATE_KEYSET_NAME, keysetPrefName)
                     .withKeyTemplate(P521_AES256_GCM_TEMPLATE)
                     .withMasterKeyUri(masterKeyUri)
                     .build().let { privateKeysetManager ->
@@ -238,11 +239,11 @@ class HybridKeyProvider(
 
     override fun destroy() {
         // Clear the private keyset preference file
-        context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit(commit = true) {
+        deviceProtectedContext.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit(commit = true) {
             clear()
         }
         // Clear the public keyset preference file
-        context.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
+        deviceProtectedContext.getSharedPreferences(PUBLIC_KEYSET_PREF_NAME, Context.MODE_PRIVATE)
             .edit(commit = true) {
                 clear()
             }

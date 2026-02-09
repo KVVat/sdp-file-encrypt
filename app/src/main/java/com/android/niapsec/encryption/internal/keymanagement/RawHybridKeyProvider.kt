@@ -70,11 +70,8 @@ class RawHybridKeyProvider(
     private val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
     val unlockedDeviceRequired: Boolean = _unlockedDeviceRequired
 
-    private val storageContext: Context = if (!unlockedDeviceRequired) {
-        context.createDeviceProtectedStorageContext()
-    } else {
-        context
-    }
+    private val storageContext: Context = context.createDeviceProtectedStorageContext()
+
 
     private val prefs = storageContext.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE)
 
