@@ -126,6 +126,14 @@ class RawKeyProvider(
         return rawAead
     }
 
+    override fun rewrapKeyToSymmetricUdr(encryptedDek: ByteArray): ByteArray {
+        TODO("Not yet implemented")
+    }
+
+    override fun isSymmetricallyWrapped(encryptedDek: ByteArray): Boolean {
+        TODO("Not yet implemented")
+    }
+
     override fun destroy() {
         try {
             val aliases = keyStore.aliases()

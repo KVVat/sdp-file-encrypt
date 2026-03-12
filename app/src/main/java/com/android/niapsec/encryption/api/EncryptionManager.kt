@@ -36,6 +36,8 @@ class EncryptionManager(
     masterKeyUri: String,
     providerType: KeyProviderType = KeyProviderType.HYBRID,
     unlockedDeviceRequired: Boolean = false,
+    lockStatePollCount: Int = 5,
+    lockStatePollIntervalMs: Long = 100,
     private val encryptionProvider: EncryptionProvider = TinkEncryptionProvider(context,
         when (providerType) {
             KeyProviderType.RAW ->
@@ -45,13 +47,23 @@ class EncryptionManager(
             KeyProviderType.SECURE ->
                 SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
             KeyProviderType.RAW_HYBRID ->
-                RawHybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
+                RawHybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}", lockStatePollCount, lockStatePollIntervalMs)
+        },
+        when (providerType) {
+            KeyProviderType.RAW -> "ERAW".toByteArray()
+            KeyProviderType.HYBRID -> "EHBT".toByteArray()
+            KeyProviderType.SECURE -> "ESEC".toByteArray()
+            KeyProviderType.RAW_HYBRID -> "EHBR".toByteArray()
         }
     )
 ) {
 
     fun destroy() {
         encryptionProvider.destroy()
+    }
+
+    fun getUnlockDeviceRequired(): Boolean {
+        return (encryptionProvider as TinkEncryptionProvider).keyProvider.getUnlockDeviceRequired()
     }
 
     /**
@@ -99,5 +111,22 @@ class EncryptionManager(
     fun decryptFromString(ciphertext: String): String {
         val ciphertextBytes = Base64.decode(ciphertext, Base64.DEFAULT)
         return encryptionProvider.decrypt(ciphertextBytes)
+    }
+
+    /**
+     * Re-wraps the file key from asymmetric to symmetric scheme.
+     * This is useful for transitioning data received while locked to a more permanent
+     * symmetric protection after the device is unlocked (FDP_DAR_EXT.2.4 compliance).
+     */
+    fun rewrapFileKey(file: File): Boolean {
+        return encryptionProvider.rewrapFileKey(android.net.Uri.fromFile(file))
+    }
+
+    /**
+     * Sweeps the app's files directory and re-wraps all pending encrypted files
+     * to the symmetric scheme.
+     */
+    fun sweepAndRewrapPendingFiles() {
+        encryptionProvider.sweepAndRewrapPendingFiles()
     }
 }
