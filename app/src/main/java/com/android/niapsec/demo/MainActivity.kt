@@ -16,9 +16,11 @@
 package com.android.niapsec.demo
 
 import android.app.admin.DevicePolicyManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,11 +42,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +66,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.android.niapsec.demo.ui.theme.FileEncryptionLibTheme
 import com.android.niapsec.encryption.api.EncryptionManager
@@ -78,6 +84,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var compName: ComponentName
 
+    private val unlockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_USER_PRESENT) {
+                Log.d("MainActivity", "Device unlocked. Triggering auto-sweep...")
+                sweepAndRewrap()
+            }
+        }
+    }
+
     private val hybridManager: EncryptionManager by lazy {
         EncryptionManager(this, hybridFileKeyUri, providerType = KeyProviderType.HYBRID, unlockedDeviceRequired = true)
     }
@@ -91,6 +106,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val testResults = mutableStateOf<List<TestResult>>(emptyList())
+    private val fileStatusResults = mutableStateOf<List<TestResult>>(emptyList())
 
     private val requestAdminLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != RESULT_OK) {
@@ -103,11 +119,25 @@ class MainActivity : ComponentActivity() {
         testRunner = EncryptionTestRunner(this)
         devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         compName = ComponentName(this, DeviceAdminReceiver::class.java)
+
+        registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
+        sweepAndRewrap()
+
         setContent {
             FileEncryptionLibTheme {
                 TestScreen()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        sweepAndRewrap()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(unlockReceiver)
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -160,64 +190,92 @@ class MainActivity : ComponentActivity() {
             Column(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.Top,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
                 ) {
-                    ProviderTestGroup(
-                        title = "Tink HYBRID",
-                        onTestClick = { runHybridFileTest() },
-                        onLockAndTestClick = { lockAndTest(KeyProviderType.HYBRID) }
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    ProviderTestGroup(
-                        title = "JCA RAW",
-                        onTestClick = { runRawFileTest() },
-                        onLockAndTestClick = { lockAndTest(KeyProviderType.RAW) }
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    ProviderTestGroup(
-                        title = "JCA RAW HYBRID",
-                        onTestClick = { runRawHybridFileTest() },
-                        onLockAndTestClick = { lockAndTest(KeyProviderType.RAW_HYBRID) }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Button(onClick = { checkFileStatus() }) { Text("Check Status") }
-                        Button(onClick = { sweepAndRewrap() }) { Text("Manual Sweep") }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { showDeleteConfirmation.value = true },
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
+                    item {
+                        ProviderTestGroup(
+                            title = "Tink HYBRID",
+                            onTestClick = { runHybridFileTest() },
+                            onLockAndTestClick = { lockAndTest(KeyProviderType.HYBRID) }
                         )
-                    ) { 
-                        Text("Clear All Keys & Data") 
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        ProviderTestGroup(
+                            title = "JCA RAW",
+                            onTestClick = { runRawFileTest() },
+                            onLockAndTestClick = { lockAndTest(KeyProviderType.RAW) }
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        ProviderTestGroup(
+                            title = "JCA RAW HYBRID",
+                            onTestClick = { runRawHybridFileTest() },
+                            onLockAndTestClick = { lockAndTest(KeyProviderType.RAW_HYBRID) }
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Button(onClick = { checkFileStatus() }) { Text("Check Status") }
+                            Button(onClick = { sweepAndRewrap() }) { Text("Manual Sweep") }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { showDeleteConfirmation.value = true },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            )
+                        ) { 
+                            Text("Clear All Keys & Data") 
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(modifier = Modifier.fillMaxWidth())
                     }
-                }
-                Divider(modifier = Modifier.fillMaxWidth())
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(testResults.value) { result ->
-                        TestResultRow(result) {
-                            result.file?.let { file ->
-                                scope.launch {
-                                    try {
-                                        val header = readHeader(file)
-                                        val manager = when (header) {
-                                            "ERAW" -> rawManager
-                                            "EHBT" -> hybridManager
-                                            "EHBR" -> rawHybridManager
-                                            else -> rawHybridManager // Default fallback
+
+                    if (testResults.value.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Test Results", 
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        items(testResults.value) { result ->
+                            TestResultRow(result, isFile = false)
+                        }
+                        item { HorizontalDivider(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) }
+                    }
+
+                    if (fileStatusResults.value.isNotEmpty()) {
+                        item {
+                            Text(
+                                "File Storage Status", 
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        items(fileStatusResults.value) { result ->
+                            TestResultRow(result, isFile = true) {
+                                result.file?.let { file ->
+                                    scope.launch {
+                                        try {
+                                            val header = readHeader(file)
+                                            val manager = when (header) {
+                                                "ERAW" -> rawManager
+                                                "EHBT" -> hybridManager
+                                                "EHBR" -> rawHybridManager
+                                                else -> rawHybridManager
+                                            }
+                                            val plaintext = manager.decryptFromFile(file).use { it.reader().readText() }
+                                            snackbarHostState.showSnackbar("Decrypted: $plaintext")
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar("Decryption failed: ${e.message}")
                                         }
-                                        val plaintext = manager.decryptFromFile(file).use { it.reader().readText() }
-                                        snackbarHostState.showSnackbar("Decrypted: $plaintext")
-                                    } catch (e: Exception) {
-                                        snackbarHostState.showSnackbar("Decryption failed: ${e.message}")
                                     }
                                 }
                             }
@@ -256,64 +314,78 @@ class MainActivity : ComponentActivity() {
         } else {
             files.forEach { file ->
                 try {
+                    val bytes = file.readBytes()
                     val header = readHeader(file)
+                    
                     val status = when (header) {
-                        "EHBT" -> "Tink Hybrid (EHBT)"
-                        "ERAW" -> "JCA Raw (ERAW)"
+                        "EHBT" -> "Tink Hybrid"
+                        "ERAW" -> "JCA Raw"
                         "EHBR" -> {
-                            val input = file.inputStream()
-                            input.skip(4) // Skip EHBR
-                            val magic = input.read()
-                            input.close()
+                            val magic = if (bytes.size > 4) bytes[4].toInt() else 0
                             when (magic) {
                                 0x01 -> "JCA RawHybrid (Asymmetric 0x01)"
                                 0x02 -> "JCA RawHybrid (Symmetric 0x02)"
-                                else -> "JCA RawHybrid (EHBR, Unknown Magic)"
+                                else -> "JCA RawHybrid (Unknown)"
                             }
                         }
                         else -> "Unknown Header: $header"
                     }
                     results.add(TestResult(file.name, true, status, file))
                 } catch (e: Exception) {
-                    results.add(TestResult(file.name, false, "Error reading file", file))
+                    results.add(TestResult(file.name, false, "Error reading", file))
                 }
             }
         }
-        testResults.value = results
+        fileStatusResults.value = results
     }
 
     @Composable
-    private fun TestResultRow(result: TestResult, onClick: () -> Unit) {
-        val isFileStatus = result.file != null
+    private fun TestResultRow(result: TestResult, isFile: Boolean, onClick: () -> Unit = {}) {
         Row(
             modifier = Modifier
                 .padding(8.dp)
                 .fillMaxWidth()
-                .clickable(enabled = isFileStatus) { onClick() },
+                .clickable(enabled = isFile) { onClick() },
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val icon: ImageVector = if (isFile) {
+                when {
+                    result.message.contains("0x01") -> Icons.Default.LockOpen
+                    result.message.contains("0x02") -> Icons.Default.Lock
+                    else -> Icons.Default.Description
+                }
+            } else {
+                if (result.passed) Icons.Default.CheckCircle else Icons.Default.Warning
+            }
+
+            val iconColor = if (isFile) {
+                if (result.message.contains("0x02")) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+            } else {
+                if (result.passed) Color.Green else Color.Red
+            }
+
             Icon(
-                imageVector = if (result.passed) Icons.Default.CheckCircle else Icons.Default.Warning,
-                contentDescription = if (result.passed) "Passed" else "Failed",
-                tint = if (result.passed) Color.Green else Color.Red
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
                     text = result.testName,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (result.passed) Color.Unspecified else Color.Red
+                    color = if (result.passed || isFile) Color.Unspecified else Color.Red
                 )
                 Text(
                     text = result.message,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (result.passed) Color.Unspecified else Color.Red
+                    color = if (result.passed || isFile) Color.Unspecified else Color.Red
                 )
-                if (isFileStatus) {
+                if (isFile) {
                     Text(
-                        text = "Tap to decrypt ${result.file?.name}",
+                        text = "Tap to verify decryption",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.secondary
                     )
                 }
             }
@@ -333,15 +405,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runHybridFileTest() {
-        testResults.value = testRunner.runFullTest(hybridManager, "TinkHybrid")
+        testResults.value = testRunner.runFullTest(hybridManager, "TinkHybridFileTest")
     }
 
     private fun runRawFileTest() {
-        testResults.value = testRunner.runFullTest(rawManager, "JcaRaw")
+        testResults.value = testRunner.runFullTest(rawManager, "JcaRawFileTest")
     }
 
     private fun runRawHybridFileTest() {
-        testResults.value = testRunner.runFullTest(rawHybridManager, "JcaRawHybrid")
+        testResults.value = testRunner.runFullTest(rawHybridManager, "JcaRawHybridFileTest")
     }
 
     private fun lockAndTest(providerType: KeyProviderType) {
@@ -361,10 +433,9 @@ class MainActivity : ComponentActivity() {
         Log.d("LockAndTest", "Locking screen to test $providerType provider...")
         devicePolicyManager.lockNow()
 
-        // [Phase 1.2] Poll for device locked state every 200ms to proceed as fast as possible
         val handler = Handler(Looper.getMainLooper())
         val startTime = System.currentTimeMillis()
-        val timeoutMs = 5000L // Safety timeout
+        val timeoutMs = 5000L
 
         val checkStateRunnable = object : Runnable {
             override fun run() {
@@ -376,7 +447,6 @@ class MainActivity : ComponentActivity() {
                     val shouldFail = true
                     testResults.value = testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
                 } else if (elapsed < timeoutMs) {
-                    // Not locked yet, poll again
                     handler.postDelayed(this, 200)
                 } else {
                     Log.e("LockAndTest", "Timeout waiting for device to lock. Proceeding anyway.")
@@ -401,6 +471,7 @@ class MainActivity : ComponentActivity() {
         rawManager.destroy()
         rawHybridManager.destroy()
         testResults.value = emptyList()
+        fileStatusResults.value = emptyList()
         Log.d("ClearData", "All keys and data have been destroyed.")
     }
 }
