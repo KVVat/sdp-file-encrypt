@@ -17,6 +17,7 @@ package com.android.niapsec.demo
 
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -25,6 +26,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,22 +35,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import com.android.niapsec.demo.ui.theme.FileEncryptionLibTheme
 import com.android.niapsec.encryption.api.EncryptionManager
 import com.android.niapsec.encryption.api.KeyProviderType
+import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -102,13 +113,44 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     private fun TestScreen() {
+        val snackbarHostState = remember { SnackbarHostState() }
+        val scope = rememberCoroutineScope()
+        val showDeleteConfirmation = remember { mutableStateOf(false) }
+
+        if (showDeleteConfirmation.value) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirmation.value = false },
+                title = { Text("Delete All Keys & Data?") },
+                text = { Text("This will permanently destroy all cryptographic keys and encrypted files. This action cannot be undone.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteConfirmation.value = false
+                            clearAll()
+                            scope.launch {
+                                snackbarHostState.showSnackbar("All keys and data destroyed")
+                            }
+                        }
+                    ) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmation.value = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
         Scaffold(
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.VpnKey, contentDescription = "Encryption Key")
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text("File Encryption Demo")
                         }
                     }
@@ -119,8 +161,7 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
                 Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     ProviderTestGroup(
@@ -128,14 +169,14 @@ class MainActivity : ComponentActivity() {
                         onTestClick = { runHybridFileTest() },
                         onLockAndTestClick = { lockAndTest(KeyProviderType.HYBRID) }
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     ProviderTestGroup(
                         title = "JCA RAW",
                         onTestClick = { runRawFileTest() },
                         onLockAndTestClick = { lockAndTest(KeyProviderType.RAW) }
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     ProviderTestGroup(
                         title = "JCA RAW HYBRID",
@@ -143,42 +184,125 @@ class MainActivity : ComponentActivity() {
                         onLockAndTestClick = { lockAndTest(KeyProviderType.RAW_HYBRID) }
                     )
 
-                    // Cleanup
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Button(onClick = { clearAll() }) { Text("Clear All Keys & Data") }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { checkFileStatus() }) { Text("Check Status") }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { showDeleteConfirmation.value = true },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) { 
+                        Text("Clear All Keys & Data") 
+                    }
                 }
                 Divider(modifier = Modifier.fillMaxWidth())
-                TestResultsList(modifier = Modifier.weight(1f))
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(testResults.value) { result ->
+                        TestResultRow(result) {
+                            result.file?.let { file ->
+                                scope.launch {
+                                    try {
+                                        val header = readHeader(file)
+                                        val manager = when (header) {
+                                            "ERAW" -> rawManager
+                                            "EHBT" -> hybridManager
+                                            "EHBR" -> rawHybridManager
+                                            else -> rawHybridManager // Default fallback
+                                        }
+                                        val plaintext = manager.decryptFromFile(file).use { it.reader().readText() }
+                                        snackbarHostState.showSnackbar("Decrypted: $plaintext")
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("Decryption failed: ${e.message}")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    @Composable
-    private fun TestResultsList(modifier: Modifier = Modifier) {
-        LazyColumn(modifier = modifier) {
-            items(testResults.value) { result ->
-                Row(
-                    modifier = Modifier.padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (result.passed) Icons.Default.CheckCircle else Icons.Default.Warning,
-                        contentDescription = if (result.passed) "Passed" else "Failed",
-                        tint = if (result.passed) Color.Green else Color.Red
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Column {
-                        Text(
-                            text = result.testName,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (result.passed) Color.Unspecified else Color.Red
-                        )
-                        Text(
-                            text = result.message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (result.passed) Color.Unspecified else Color.Red
-                        )
+    private fun readHeader(file: File): String {
+        return try {
+            val input = file.inputStream()
+            val headerBytes = ByteArray(4)
+            val read = input.read(headerBytes)
+            input.close()
+            if (read == 4) String(headerBytes) else ""
+        } catch (e: Exception) { "" }
+    }
+
+    private fun checkFileStatus() {
+        val results = mutableListOf<TestResult>()
+        val files = filesDir.listFiles()?.filter { it.name.endsWith(".enc") } ?: emptyList()
+
+        if (files.isEmpty()) {
+            results.add(TestResult("File Status", true, "No .enc files found"))
+        } else {
+            files.forEach { file ->
+                try {
+                    val header = readHeader(file)
+                    val status = when (header) {
+                        "EHBT" -> "Tink Hybrid (EHBT)"
+                        "ERAW" -> "JCA Raw (ERAW)"
+                        "EHBR" -> {
+                            val input = file.inputStream()
+                            input.skip(4) // Skip EHBR
+                            val magic = input.read()
+                            input.close()
+                            when (magic) {
+                                0x01 -> "JCA RawHybrid (Asymmetric 0x01)"
+                                0x02 -> "JCA RawHybrid (Symmetric 0x02)"
+                                else -> "JCA RawHybrid (EHBR, Unknown Magic)"
+                            }
+                        }
+                        else -> "Unknown Header: $header"
                     }
+                    results.add(TestResult(file.name, true, status, file))
+                } catch (e: Exception) {
+                    results.add(TestResult(file.name, false, "Error reading file", file))
+                }
+            }
+        }
+        testResults.value = results
+    }
+
+    @Composable
+    private fun TestResultRow(result: TestResult, onClick: () -> Unit) {
+        val isFileStatus = result.file != null
+        Row(
+            modifier = Modifier
+                .padding(8.dp)
+                .fillMaxWidth()
+                .clickable(enabled = isFileStatus) { onClick() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (result.passed) Icons.Default.CheckCircle else Icons.Default.Warning,
+                contentDescription = if (result.passed) "Passed" else "Failed",
+                tint = if (result.passed) Color.Green else Color.Red
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = result.testName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (result.passed) Color.Unspecified else Color.Red
+                )
+                Text(
+                    text = result.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (result.passed) Color.Unspecified else Color.Red
+                )
+                if (isFileStatus) {
+                    Text(
+                        text = "Tap to decrypt ${result.file?.name}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }
@@ -261,12 +385,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearAll() {
-        // Destroy all keys and clear results
         hybridManager.destroy()
         rawManager.destroy()
         rawHybridManager.destroy()
         testResults.value = emptyList()
-
         Log.d("ClearData", "All keys and data have been destroyed.")
     }
 }

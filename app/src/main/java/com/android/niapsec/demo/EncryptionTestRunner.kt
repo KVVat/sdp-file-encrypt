@@ -20,12 +20,12 @@ import android.util.Log
 import com.android.niapsec.encryption.api.EncryptionManager
 import java.io.File
 
-data class TestResult(val testName: String, val passed: Boolean, val message: String)
+data class TestResult(val testName: String, val passed: Boolean, val message: String, val file: File? = null)
 
 class EncryptionTestRunner(private val context: Context) {
 
     companion object {
-        const val ENCRYPTED_FILE_NAME = "test_file.txt"
+        const val ENCRYPTED_FILE_NAME = "test_file.enc"
         const val ORIGINAL_TEXT = "This is a secret message."
     }
 
@@ -49,20 +49,11 @@ class EncryptionTestRunner(private val context: Context) {
         // Run Encryption Phase
         val encryptionResult = testEncryption(encryptionManager, file, testName, reverseEncryptionResult)
         results.add(encryptionResult)
-        if (encryptionResult.passed) {
-            Log.d(testName, "Encryption test phase PASSED.")
-        } else {
-            Log.e(testName, "Encryption test phase FAILED.")
-        }
 
         // Run Decryption Phase
         val decryptionResult = testDecryption(encryptionManager, file, testName, reverseDecryptionResult)
         results.add(decryptionResult)
-        if (decryptionResult.passed) {
-            Log.d(testName, "Decryption test phase PASSED.")
-        } else {
-            Log.e(testName, "Decryption test phase FAILED.")
-        }
+        
         Log.d(testName, "--- TEST COMPLETE ---")
         return results
     }
@@ -74,34 +65,37 @@ class EncryptionTestRunner(private val context: Context) {
             encryptionManager.encryptToFile(file).use { it.write(ORIGINAL_TEXT.toByteArray()) }
             val passed = !reverseResult
             val message = if (passed) "Encryption successful" else "Encryption expected to fail but succeeded"
-            TestResult(testName, passed, message)
+            TestResult(testName, passed, message, file)
         } catch (e: Exception) {
             val passed = reverseResult
-            val message = if (passed) "Encryption failed as expected" else "Encryption failed unexpectedly"
+            val message = if (passed) "Encryption rejected as expected (${e.javaClass.simpleName})" else "Encryption failed unexpectedly: ${e.message}"
             Log.e(testName, message, e)
-            TestResult(testName, passed, message)
+            TestResult(testName, passed, message, file)
         }
     }
 
     private fun testDecryption(encryptionManager: EncryptionManager, file: File, testName: String, reverseResult: Boolean): TestResult {
         return try {
             Log.d(testName, "Attempting decryption...")
+            if (!file.exists()) {
+                return TestResult(testName, false, "Decryption failed: File not found", file)
+            }
             val decryptedText = encryptionManager.decryptFromFile(file).use { it.reader().readText() }
             if (ORIGINAL_TEXT == decryptedText) {
                 val passed = !reverseResult
                 val message = if (passed) "Decryption successful and content matches" else "Decryption expected to fail but succeeded"
-                TestResult(testName, passed, message)
+                TestResult(testName, passed, message, file)
             } else {
                 val passed = reverseResult
                 val message = "Decryption succeeded but content MISMATCH"
                 Log.e(testName, message)
-                TestResult(testName, passed, message)
+                TestResult(testName, passed, message, file)
             }
         } catch (e: Exception) {
             val passed = reverseResult
-            val message = if (passed) "Decryption failed as expected" else "Decryption failed unexpectedly"
+            val message = if (passed) "Decryption rejected as expected (${e.javaClass.simpleName})" else "Decryption failed unexpectedly: ${e.message}"
             Log.e(testName, message, e)
-            TestResult(testName, passed, message)
+            TestResult(testName, passed, message, file)
         }
     }
 }
