@@ -17,12 +17,14 @@ package com.android.niapsec.encryption.api
 
 import android.content.Context
 import android.util.Base64
+import android.util.Log
 import com.android.niapsec.encryption.internal.EncryptionProvider
 import com.android.niapsec.encryption.internal.TinkEncryptionProvider
 import com.android.niapsec.encryption.internal.keymanagement.HybridKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.RawHybridKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.RawKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.SecureKeyProvider
+import com.android.niapsec.encryption.toHexDumpString
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -58,7 +60,8 @@ class EncryptionManager(
      * Suitable for small files.
      */
     fun encryptToFile(file: File): OutputStream {
-        return encryptionProvider.encrypt(file)
+        val encryptedContent = encryptionProvider.encrypt(file);
+        return encryptedContent
     }
 
     /**

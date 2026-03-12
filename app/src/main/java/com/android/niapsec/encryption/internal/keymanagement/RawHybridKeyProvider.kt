@@ -4,7 +4,9 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import androidx.core.content.edit
+import com.android.niapsec.encryption.toHexDumpString
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.StreamingAead
 import com.google.crypto.tink.subtle.Hkdf
@@ -182,6 +184,7 @@ class RawHybridKeyProvider(
                 wrapCipher.init(Cipher.ENCRYPT_MODE, kekSpec)
                 val wrappedDek = wrapCipher.doFinal(dekBytes)
                 val wrapIv = wrapCipher.iv
+                Log.d("RawHybridKeyProvider",encryptedContent.toHexDumpString())
                 return serializeEncryptedPackage(ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
             } finally {
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
