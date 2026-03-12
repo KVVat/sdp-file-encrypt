@@ -87,6 +87,14 @@ class SecureKeyProvider(
         return keysetHandle.getPrimitive(RegistryConfiguration.get(),Aead::class.java)
     }
 
+    override fun rewrapKeyToSymmetricUdr(encryptedDek: ByteArray): ByteArray {
+        TODO("Not yet implemented")
+    }
+
+    override fun isSymmetricallyWrapped(encryptedDek: ByteArray): Boolean {
+        TODO("Not yet implemented")
+    }
+
     override fun destroy() {
         context.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences(HARDWARE_KEYSET_NAME, Context.MODE_PRIVATE).edit().clear().commit()

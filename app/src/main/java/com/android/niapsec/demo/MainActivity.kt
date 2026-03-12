@@ -221,14 +221,35 @@ class MainActivity : ComponentActivity() {
             else -> throw IllegalArgumentException("Unsupported provider type: $providerType")
         }
 
+        val keyguardManager = getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager
         Log.d("LockAndTest", "Locking screen to test $providerType provider...")
         devicePolicyManager.lockNow()
 
-        Handler(Looper.getMainLooper()).postDelayed({
-            Log.d("LockAndTest", "Running $providerType test after delay...")
-            val shouldFail = true // All providers that require user auth should fail when locked
-            testResults.value = testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
-        }, 5000)
+        // [Phase 1.2] Poll for device locked state every 200ms to proceed as fast as possible
+        val handler = Handler(Looper.getMainLooper())
+        val startTime = System.currentTimeMillis()
+        val timeoutMs = 5000L // Safety timeout
+
+        val checkStateRunnable = object : Runnable {
+            override fun run() {
+                val isLocked = keyguardManager.isDeviceLocked
+                val elapsed = System.currentTimeMillis() - startTime
+                
+                if (isLocked) {
+                    Log.d("LockAndTest", "Device is LOCKED after ${elapsed}ms. Proceeding with test.")
+                    val shouldFail = true
+                    testResults.value = testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
+                } else if (elapsed < timeoutMs) {
+                    // Not locked yet, poll again
+                    handler.postDelayed(this, 200)
+                } else {
+                    Log.e("LockAndTest", "Timeout waiting for device to lock. Proceeding anyway.")
+                    val shouldFail = true
+                    testResults.value = testRunner.runFullTest(manager, "${providerType}AfterLock", reverseDecryptionResult = shouldFail)
+                }
+            }
+        }
+        handler.postDelayed(checkStateRunnable, 200)
     }
 
     private fun requestDeviceAdmin() {

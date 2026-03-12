@@ -17,6 +17,7 @@
 package com.android.niapsec.encryption.internal
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import com.android.niapsec.encryption.internal.keymanagement.KeyProvider
 import com.android.niapsec.encryption.tools.SecurityAuditLogger
@@ -35,66 +36,52 @@ class TinkEncryptionProvider(
     val keyProvider: KeyProvider
 ) : EncryptionProvider {
 
-    private val encryptionFlag = byteArrayOf(0x0)
+    private val encryptionFlag = byteArrayOf(0x00)
 
-    // --- In-Memory Operations (Aead) ---
+    // --- File Operations (In-Memory) ---
 
     override fun encrypt(file: File): OutputStream {
         val aead = keyProvider.getAead()
-        // Returns a ByteArrayOutputStream that encrypts on close() and writes to file
+        val fileOutputStream = FileOutputStream(file)
+        fileOutputStream.write(encryptionFlag)
+
         return object : ByteArrayOutputStream() {
             override fun close() {
+                val ciphertext = aead.encrypt(toByteArray(), encryptionFlag)
+                fileOutputStream.write(ciphertext)
+                fileOutputStream.close()
                 super.close()
-                val plaintext = toByteArray()
-                val ciphertext = aead.encrypt(plaintext, encryptionFlag)
-
-                if (SecurityAuditLogger.isAuditLogEnabled) {
-                    Log.d("TinkEncryptionProvider", "Encrypted Content:\n" + ciphertext.toHexDumpString())
-                }
-
-                file.writeBytes(encryptionFlag + ciphertext)
             }
         }
     }
 
     override fun decrypt(file: File): InputStream {
-        val fileBytes = file.readBytes()
-        if (fileBytes.isEmpty()) {
-            throw GeneralSecurityException("Cannot decrypt empty file.")
+        val fileInputStream = FileInputStream(file)
+        try {
+            val flag = ByteArray(encryptionFlag.size)
+            if (fileInputStream.read(flag) != flag.size || !flag.contentEquals(encryptionFlag)) {
+                throw GeneralSecurityException("Invalid encryption flag found in data.")
+            }
+            val ciphertext = fileInputStream.readBytes()
+            val aead = keyProvider.getAead()
+            val plaintext = aead.decrypt(ciphertext, encryptionFlag)
+            return ByteArrayInputStream(plaintext)
+        } finally {
+            fileInputStream.close()
         }
-        val flag = fileBytes.copyOfRange(0, 1)
-        val actualCiphertext = fileBytes.copyOfRange(1, fileBytes.size)
-
-        if (!flag.contentEquals(encryptionFlag)) {
-            throw GeneralSecurityException("Invalid encryption flag found in data.")
-        }
-
-        val aead = keyProvider.getAead()
-        val plaintext = aead.decrypt(actualCiphertext, encryptionFlag)
-        return ByteArrayInputStream(plaintext)
     }
 
-    // --- Streaming Operations (StreamingAead) ---
+    // --- Stream Operations (StreamingAead) ---
 
     override fun encryptStream(file: File): OutputStream {
-        val streamingAead = keyProvider.getStreamingAead()
-            ?: throw UnsupportedOperationException("Streaming encryption is not supported by the current KeyProvider.")
-
+        val streamingAead = keyProvider.getStreamingAead() ?: throw UnsupportedOperationException("Streaming not supported")
         val fileOutputStream = FileOutputStream(file)
-        try {
-            // Write the encryption flag first to maintain format consistency
-            fileOutputStream.write(encryptionFlag)
-            return streamingAead.newEncryptingStream(fileOutputStream, encryptionFlag)
-        } catch (e: Exception) {
-            fileOutputStream.close()
-            throw e
-        }
+        fileOutputStream.write(encryptionFlag)
+        return streamingAead.newEncryptingStream(fileOutputStream, encryptionFlag)
     }
 
     override fun decryptStream(file: File): InputStream {
-        val streamingAead = keyProvider.getStreamingAead()
-            ?: throw UnsupportedOperationException("Streaming decryption is not supported by the current KeyProvider.")
-
+        val streamingAead = keyProvider.getStreamingAead() ?: throw UnsupportedOperationException("Streaming not supported")
         val fileInputStream = FileInputStream(file)
         try {
             // Read and verify the encryption flag
@@ -132,6 +119,14 @@ class TinkEncryptionProvider(
         val aead = keyProvider.getAead()
         val plaintext = aead.decrypt(actualCiphertext, encryptionFlag)
         return String(plaintext)
+    }
+
+    override fun rewrapFileKey(fileUri: Uri): Boolean {
+        TODO("Not yet implemented")
+    }
+
+    override fun sweepAndRewrapPendingFiles() {
+        TODO("Not yet implemented")
     }
 
     override fun destroy() {
