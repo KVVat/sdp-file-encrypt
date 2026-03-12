@@ -37,6 +37,13 @@ class EncryptionTestRunner(private val context: Context) {
     ): List<TestResult> {
         Log.d(testName, "--- STARTING TEST (Reverse Encrypt: $reverseEncryptionResult, Reverse Decrypt: $reverseDecryptionResult) ---")
         val file = File(context.filesDir, "$testName-$ENCRYPTED_FILE_NAME")
+        
+        // [Phase 1.1] Ensure clean state by deleting any existing file from a previous run.
+        if (file.exists()) {
+            val deleted = file.delete()
+            Log.d(testName, "Deleted stale test file: $deleted")
+        }
+
         val results = mutableListOf<TestResult>()
 
         // Run Encryption Phase
