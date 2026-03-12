@@ -24,7 +24,6 @@ import com.android.niapsec.encryption.internal.keymanagement.HybridKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.RawHybridKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.RawKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.SecureKeyProvider
-import com.android.niapsec.encryption.toHexDumpString
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
