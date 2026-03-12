@@ -47,6 +47,12 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name=".encryption.receiver.DeviceUnlockReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.USER_UNLOCKED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

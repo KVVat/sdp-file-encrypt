@@ -179,6 +179,14 @@ class HybridKeyProvider(
         return unlockedDeviceRequired
     }
 
+    override fun rewrapKeyToSymmetricUdr(encryptedDek: ByteArray): ByteArray {
+        TODO("Not yet implemented")
+    }
+
+    override fun isSymmetricallyWrapped(encryptedDek: ByteArray): Boolean {
+        TODO("Not yet implemented")
+    }
+
     private fun createMasterKeyIfNeeded() {
         val keyAlias = masterKeyUri.removePrefix("android-keystore://")
         val keyStore = KeyStore.getInstance("AndroidKeyStore")

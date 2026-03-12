@@ -36,6 +36,11 @@ interface KeyProvider {
 
     fun getUnlockDeviceRequired(): Boolean
 
+    //new methods for rewrapping with UDR symmetric keys
+    fun rewrapKeyToSymmetricUdr(encryptedDek: ByteArray): ByteArray
+
+    fun isSymmetricallyWrapped(encryptedDek: ByteArray): Boolean
+
     /**
      * Destroys all cryptographic material associated with this provider.
      */
