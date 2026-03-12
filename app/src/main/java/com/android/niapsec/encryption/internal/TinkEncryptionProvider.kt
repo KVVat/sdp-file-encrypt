@@ -17,7 +17,9 @@
 package com.android.niapsec.encryption.internal
 
 import android.content.Context
+import android.util.Log
 import com.android.niapsec.encryption.internal.keymanagement.KeyProvider
+import com.android.niapsec.encryption.toHexDumpString
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -44,6 +46,7 @@ class TinkEncryptionProvider(
                 super.close()
                 val plaintext = toByteArray()
                 val ciphertext = aead.encrypt(plaintext, encryptionFlag)
+                Log.d("RawHybridKeyProvider",ciphertext.toHexDumpString())
                 file.writeBytes(encryptionFlag + ciphertext)
             }
         }
