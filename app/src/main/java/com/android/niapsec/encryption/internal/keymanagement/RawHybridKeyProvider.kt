@@ -78,7 +78,7 @@ class RawHybridKeyProvider(
 
     private val prefs = storageContext.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE)
 
-    private companion object {
+    companion object {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_PUBLIC_KEY_PREF = "master_public_key"
         private const val EC_KEY_ALGORITHM = KeyProperties.KEY_ALGORITHM_EC
@@ -88,7 +88,13 @@ class RawHybridKeyProvider(
         private const val DEK_SIZE_BITS = 256
         private const val DATA_CIPHER = "AES/GCM/NoPadding"
         private const val GCM_TAG_LENGTH_BITS = 128
+        const val MAGIC_BYTE_ASYMMETRIC: Byte = 0x01 // ロック中の一時保存（現在のHybrid方式）
+        const val MAGIC_BYTE_SYMMETRIC: Byte = 0x02  // ロック解除後の再暗号化（対称UDR方式）
+
     }
+
+
+
 
     init {
         generateAndStoreKeyPairIfNeeded()
@@ -354,6 +360,13 @@ class RawHybridKeyProvider(
     override fun getAead(): Aead = rawHybridAead
     override fun getStreamingAead(): StreamingAead = rawHybridStreamingAead
     override fun getUnlockDeviceRequired(): Boolean = unlockedDeviceRequired
+    override fun rewrapKeyToSymmetricUdr(encryptedDek: ByteArray): ByteArray {
+        TODO("Not yet implemented")
+    }
+
+    override fun isSymmetricallyWrapped(encryptedDek: ByteArray): Boolean {
+        TODO("Not yet implemented")
+    }
 
     override fun destroy() {
         // [FCS_CKM_EXT.4] & [FCS_STG_EXT.2] Secure deletion from persistent storage
@@ -377,6 +390,7 @@ private data class EncryptedPackage(
 private fun serializeEncryptedPackage(ephemeralPublicKeyBytes: ByteArray, wrappedDek: ByteArray, wrapIv: ByteArray, encryptedContent: ByteArray, dataIv: ByteArray): ByteArray {
     val bos = ByteArrayOutputStream()
     DataOutputStream(bos).use {
+        it.writeByte(RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC.toInt())
         it.writeInt(ephemeralPublicKeyBytes.size)
         it.write(ephemeralPublicKeyBytes)
         it.writeInt(wrappedDek.size)
@@ -392,6 +406,12 @@ private fun serializeEncryptedPackage(ephemeralPublicKeyBytes: ByteArray, wrappe
 
 private fun deserializeEncryptedPackage(ciphertext: ByteArray): EncryptedPackage {
     val buffer = ByteBuffer.wrap(ciphertext)
+
+    val magicByte = buffer.get()
+    if (magicByte != RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC) {
+        // ※将来的に MAGIC_BYTE_SYMMETRIC の場合の分岐をここに追加します
+        throw IllegalArgumentException("Invalid magic byte or unsupported format: $magicByte")
+    }
     val ephKeySize = buffer.int
     val ephKey = ByteArray(ephKeySize).apply { buffer.get(this) }
     val wrapDekSize = buffer.int

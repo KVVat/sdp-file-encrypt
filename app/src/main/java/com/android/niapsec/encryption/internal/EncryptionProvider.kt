@@ -16,6 +16,7 @@
 
 package com.android.niapsec.encryption.internal
 
+import android.net.Uri
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -57,6 +58,11 @@ interface EncryptionProvider {
      * Decrypts a ciphertext byte array into a plaintext string.
      */
     fun decrypt(ciphertext: ByteArray): String
+
+    //new methods for rewrap with symmetric keys
+    fun rewrapFileKey(fileUri: Uri): Boolean
+
+    fun sweepAndRewrapPendingFiles()
 
     /**
      * Destroys any cryptographic material associated with this provider.
