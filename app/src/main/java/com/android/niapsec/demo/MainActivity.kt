@@ -185,7 +185,10 @@ class MainActivity : ComponentActivity() {
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { checkFileStatus() }) { Text("Check Status") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Button(onClick = { checkFileStatus() }) { Text("Check Status") }
+                        Button(onClick = { sweepAndRewrap() }) { Text("Manual Sweep") }
+                    }
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
@@ -233,6 +236,15 @@ class MainActivity : ComponentActivity() {
             input.close()
             if (read == 4) String(headerBytes) else ""
         } catch (e: Exception) { "" }
+    }
+
+    private fun sweepAndRewrap() {
+        try {
+            rawHybridManager.sweepAndRewrapPendingFiles()
+            checkFileStatus()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Sweep failed", e)
+        }
     }
 
     private fun checkFileStatus() {
@@ -321,15 +333,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runHybridFileTest() {
-        testResults.value = testRunner.runFullTest(hybridManager, "TinkHybridFileTest")
+        testResults.value = testRunner.runFullTest(hybridManager, "TinkHybrid")
     }
 
     private fun runRawFileTest() {
-        testResults.value = testRunner.runFullTest(rawManager, "JcaRawFileTest")
+        testResults.value = testRunner.runFullTest(rawManager, "JcaRaw")
     }
 
     private fun runRawHybridFileTest() {
-        testResults.value = testRunner.runFullTest(rawHybridManager, "JcaRawHybridFileTest")
+        testResults.value = testRunner.runFullTest(rawHybridManager, "JcaRawHybrid")
     }
 
     private fun lockAndTest(providerType: KeyProviderType) {

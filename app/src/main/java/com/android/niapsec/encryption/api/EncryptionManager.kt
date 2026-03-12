@@ -36,6 +36,8 @@ class EncryptionManager(
     masterKeyUri: String,
     providerType: KeyProviderType = KeyProviderType.HYBRID,
     unlockedDeviceRequired: Boolean = false,
+    lockStatePollCount: Int = 5,
+    lockStatePollIntervalMs: Long = 100,
     private val encryptionProvider: EncryptionProvider = TinkEncryptionProvider(context,
         when (providerType) {
             KeyProviderType.RAW ->
@@ -45,7 +47,7 @@ class EncryptionManager(
             KeyProviderType.SECURE ->
                 SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
             KeyProviderType.RAW_HYBRID ->
-                RawHybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
+                RawHybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}", lockStatePollCount, lockStatePollIntervalMs)
         },
         when (providerType) {
             KeyProviderType.RAW -> "ERAW".toByteArray()
