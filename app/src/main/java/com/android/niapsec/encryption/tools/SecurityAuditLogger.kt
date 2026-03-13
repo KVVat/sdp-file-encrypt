@@ -28,6 +28,13 @@ object SecurityAuditLogger {
         Log.d(tag, "=== SECURITY AUDIT KEY MATERIAL: $name ===")
         Log.d(tag,  bytes.toHexString())
     }
+
+    fun logLine(msg: String) {
+        logLine(tag = TAG, msg = msg)
+    }
+    fun logLine(tag:String,msg: String) {
+        Log.d(tag,msg)
+    }
 }
 
 fun ByteArray.toHexString(): String {

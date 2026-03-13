@@ -22,6 +22,7 @@ import java.nio.channels.SeekableByteChannel
 import java.nio.channels.WritableByteChannel
 import java.security.GeneralSecurityException
 import java.security.KeyFactory
+import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.PrivateKey
@@ -218,6 +219,7 @@ class RawHybridKeyProvider(
             val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
             var sharedSecret: ByteArray? = null
             var kekBytes: ByteArray? = null
+            var ephemeralKeyPair: KeyPair? = null
             try {
                 SecureRandom().nextBytes(dekBytes)
                 val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
@@ -228,7 +230,7 @@ class RawHybridKeyProvider(
                 val dataIv = dataCipher.iv
                 val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(256) }
                 //TSF does not store the ephemeral private key and relies on JVM object scope for transient cleanup
-                val ephemeralKeyPair = ephemeralKpg.generateKeyPair()
+                ephemeralKeyPair = ephemeralKpg.generateKeyPair()
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
                 keyAgreement.init(ephemeralKeyPair.private)
                 keyAgreement.doPhase(recipientPubKey, true)
@@ -242,9 +244,13 @@ class RawHybridKeyProvider(
 
                 return serializeEncryptedPackage(MAGIC_BYTE_ASYMMETRIC, ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
             } finally {
-                SecurityAuditLogger.logKeyMaterial("ECDH Shared Secret", sharedSecret)
-                SecurityAuditLogger.logKeyMaterial( "Derived KEK (from HKDF)", kekBytes)
-                SecurityAuditLogger.logKeyMaterial( "AES-GCM FEK (DEK)", dekBytes)
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key pair Public Key", ephemeralKeyPair?.public?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key pair Private Key", ephemeralKeyPair?.private?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Recipient UDR Key pair (Public Key)", recipientPubKey.encoded)
+
+                SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
+                SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
+                SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
 
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
@@ -254,14 +260,14 @@ class RawHybridKeyProvider(
         override fun decrypt(ciphertext: ByteArray, associatedData: ByteArray): ByteArray {
             val pkg = deserializeEncryptedPackage(ciphertext)
             var dekBytes: ByteArray? = null
-
+            var sharedSecret: ByteArray? = null
+            var kekBytes: ByteArray? = null
             try {
                 if (pkg.magicByte == MAGIC_BYTE_ASYMMETRIC) {
                     val recipientPrivateKey = loadRecipientPrivateKey()
                     val ephemeralPubKeySpec = X509EncodedKeySpec(pkg.ephemeralPublicKeyBytes!!)
                     val ephemeralPublicKey = KeyFactory.getInstance(EC_KEY_ALGORITHM).generatePublic(ephemeralPubKeySpec)
-                    var sharedSecret: ByteArray? = null
-                    var kekBytes: ByteArray? = null
+
                     try {
                         val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
                         keyAgreement.init(recipientPrivateKey)
@@ -278,6 +284,7 @@ class RawHybridKeyProvider(
                 } else if (pkg.magicByte == MAGIC_BYTE_SYMMETRIC) {
                     val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
                         ?: throw GeneralSecurityException("Symmetric master key not found")
+
                     val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                     unwrapCipher.init(Cipher.DECRYPT_MODE, masterKey, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                     dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
@@ -291,7 +298,19 @@ class RawHybridKeyProvider(
                 return dataCipher.doFinal(pkg.encryptedContent)
             } finally {
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
+                if(pkg.magicByte == MAGIC_BYTE_ASYMMETRIC) {
+                    //Basically this line would not be passed.
+                    SecurityAuditLogger.logLine( "Decrypt asymmetric")
+                    SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
+                    SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
+                } else {
+                    SecurityAuditLogger.logLine( "Decrypt symmetric")
+                    SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
+                }
+
                 dekBytes?.fill(0)
+                kekBytes?.fill(0)
+                sharedSecret?.fill(0)
             }
         }
     }
