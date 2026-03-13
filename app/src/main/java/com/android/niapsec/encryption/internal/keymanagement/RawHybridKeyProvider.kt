@@ -362,6 +362,10 @@ class RawHybridKeyProvider(
                 dos.write(dataIv)
                 dos.flush()
 
+                wrapIv.fill(0)
+                wrappedDek.fill(0)
+                dataIv.fill(0)
+
                 return CipherOutputStream(ciphertext, dataCipher)
             } finally {
                 dekBytes.fill(0)
@@ -413,6 +417,10 @@ class RawHybridKeyProvider(
                 dos.write(dataIv)
                 dos.flush()
 
+                wrapIv.fill(0)
+                wrappedDek.fill(0)
+                dataIv.fill(0)
+
                 return CipherOutputStream(ciphertext, dataCipher)
             } finally {
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
@@ -463,35 +471,56 @@ class RawHybridKeyProvider(
 
                         return CipherInputStream(ciphertext, dataCipher)
                     } finally {
-                        sharedSecret?.fill(0); kekBytes?.fill(0)
+                        ephKeyBytes.fill(0)
+
+                        sharedSecret?.fill(0);
+                        kekBytes?.fill(0)
+                        dekBytes?.fill(0)
+                        wrappedDek.fill(0)
+                        wrapIv.fill(0)
                     }
                 } else if (magicByte == MAGIC_BYTE_SYMMETRIC) {
-                    val wrapDekLen = dis.readInt()
-                    val wrappedDek = ByteArray(wrapDekLen).apply { dis.readFully(this) }
+                    try {
+                        val wrapDekLen = dis.readInt()
+                        val wrappedDek = ByteArray(wrapDekLen).apply { dis.readFully(this) }
 
-                    val wrapIvLen = dis.readInt()
-                    val wrapIv = ByteArray(wrapIvLen).apply { dis.readFully(this) }
+                        val wrapIvLen = dis.readInt()
+                        val wrapIv = ByteArray(wrapIvLen).apply { dis.readFully(this) }
 
-                    val dataIvLen = dis.readInt()
-                    val dataIv = ByteArray(dataIvLen).apply { dis.readFully(this) }
+                        val dataIvLen = dis.readInt()
+                        val dataIv = ByteArray(dataIvLen).apply { dis.readFully(this) }
 
-                    val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
-                        ?: throw GeneralSecurityException("Symmetric master key not found")
-                    val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
-                    unwrapCipher.init(Cipher.DECRYPT_MODE, masterKey, GCMParameterSpec(GCM_TAG_LENGTH_BITS, wrapIv))
-                    dekBytes = unwrapCipher.doFinal(wrappedDek)
+                        val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
+                            ?: throw GeneralSecurityException("Symmetric master key not found")
+                        val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
+                        unwrapCipher.init(
+                            Cipher.DECRYPT_MODE,
+                            masterKey,
+                            GCMParameterSpec(GCM_TAG_LENGTH_BITS, wrapIv)
+                        )
+                        dekBytes = unwrapCipher.doFinal(wrappedDek)
 
-                    val dataCipher = Cipher.getInstance(DATA_CIPHER)
-                    val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
-                    dataCipher.init(Cipher.DECRYPT_MODE, dekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, dataIv))
-                    dataCipher.updateAAD(associatedData)
+                        val dataCipher = Cipher.getInstance(DATA_CIPHER)
+                        val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
+                        dataCipher.init(
+                            Cipher.DECRYPT_MODE,
+                            dekSpec,
+                            GCMParameterSpec(GCM_TAG_LENGTH_BITS, dataIv)
+                        )
+                        dataCipher.updateAAD(associatedData)
 
-                    return CipherInputStream(ciphertext, dataCipher)
+                        wrappedDek.fill(0)
+                        dataIv.fill(0)
+                        wrapIv.fill(0)
+
+                        return CipherInputStream(ciphertext, dataCipher)
+                    } finally {
+                        dekBytes?.fill(0)
+                    }
                 } else {
                     throw IllegalArgumentException("Unsupported magic byte: $magicByte")
                 }
             } catch (e: Exception) {
-                dekBytes?.fill(0)
                 throw e
             }
         }
