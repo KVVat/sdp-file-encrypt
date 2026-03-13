@@ -12,14 +12,27 @@ object SecurityAuditLogger {
     // 監査用トグルスイッチ
     var isAuditLogEnabled = true
 
-    fun logKeyMaterial(tag: String, keyName: String, keyBytes: ByteArray?) {
-        if (!isAuditLogEnabled || keyBytes == null) return
+    private const val TAG = "AUDIT_LOGGER KMD"
 
-        Log.d(tag, "=== SECURITY AUDIT LOG: $keyName ===")
-        Log.d(tag, "\n" + keyBytes.toHexDumpString())
+    fun logMaterial(tag: String = TAG, name: String, bytes: ByteArray?) {
+        if (!isAuditLogEnabled || bytes == null) return
+        Log.d(tag,  bytes.toHexDumpString())
+    }
+
+    fun logKeyMaterial(name: String, bytes: ByteArray?) {
+        return logKeyMaterial(tag = TAG, name = name, bytes = bytes);
+    }
+    fun logKeyMaterial(tag: String= TAG, name: String, bytes: ByteArray?) {
+        if (!isAuditLogEnabled || bytes== null) return
+
+        Log.d(tag, "=== SECURITY AUDIT KEY MATERIAL: $name ===")
+        Log.d(tag,  bytes.toHexString())
     }
 }
 
+fun ByteArray.toHexString(): String {
+    return joinToString("") { "%02x".format(it) }
+}
 fun ByteArray.toHexDumpString(): String = buildString {
     for (rowAddr in this@toHexDumpString.indices step 16) {
         val rowEnd = minOf(rowAddr + 16, this@toHexDumpString.size)

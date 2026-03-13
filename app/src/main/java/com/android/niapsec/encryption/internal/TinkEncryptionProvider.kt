@@ -20,8 +20,6 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.android.niapsec.encryption.internal.keymanagement.KeyProvider
-import com.android.niapsec.encryption.tools.SecurityAuditLogger
-import com.android.niapsec.encryption.tools.toHexDumpString
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File

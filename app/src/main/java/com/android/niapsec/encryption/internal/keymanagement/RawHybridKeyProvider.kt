@@ -240,15 +240,11 @@ class RawHybridKeyProvider(
                 val wrappedDek = wrapCipher.doFinal(dekBytes)
                 val wrapIv = wrapCipher.iv
 
-                if (SecurityAuditLogger.isAuditLogEnabled) {
-                    Log.d("TinkEncryptionProvider", "Encrypted Content:\n" + encryptedContent.toHexDumpString())
-                }
-
                 return serializeEncryptedPackage(MAGIC_BYTE_ASYMMETRIC, ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
             } finally {
-                SecurityAuditLogger.logKeyMaterial("RawHybridKeyProvider", "ECDH Shared Secret", sharedSecret)
-                SecurityAuditLogger.logKeyMaterial("RawHybridKeyProvider", "Derived KEK (from HKDF)", kekBytes)
-                SecurityAuditLogger.logKeyMaterial("RawHybridKeyProvider", "AES-GCM FEK (DEK)", dekBytes)
+                SecurityAuditLogger.logKeyMaterial("ECDH Shared Secret", sharedSecret)
+                SecurityAuditLogger.logKeyMaterial( "Derived KEK (from HKDF)", kekBytes)
+                SecurityAuditLogger.logKeyMaterial( "AES-GCM FEK (DEK)", dekBytes)
 
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
