@@ -305,36 +305,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+    private fun readHeaderAndMagic(file: File): Pair<String, Int> {
+        return try {
+            file.inputStream().use { input ->
+                val buffer = ByteArray(5)
+                val read = input.read(buffer)
+                if (read >= 4) {
+                    val header = String(buffer.sliceArray(0..3))
+                    val magic = if (read == 5) buffer[4].toInt() else 0
+                    Pair(header, magic)
+                } else Pair("", 0)
+            }
+        } catch (e: Exception) { Pair("", 0) }
+    }
     private fun checkFileStatus() {
         val results = mutableListOf<TestResult>()
         val files = filesDir.listFiles()?.filter { it.name.endsWith(".enc") } ?: emptyList()
 
-        if (files.isEmpty()) {
-            results.add(TestResult("File Status", true, "No .enc files found"))
-        } else {
-            files.forEach { file ->
-                try {
-                    val bytes = file.readBytes()
-                    val header = readHeader(file)
-                    
-                    val status = when (header) {
-                        "EHBT" -> "Tink Hybrid"
-                        "ERAW" -> "JCA Raw"
-                        "EHBR" -> {
-                            val magic = if (bytes.size > 4) bytes[4].toInt() else 0
-                            when (magic) {
-                                0x01 -> "JCA RawHybrid (Asymmetric 0x01)"
-                                0x02 -> "JCA RawHybrid (Symmetric 0x02)"
-                                else -> "JCA RawHybrid (Unknown)"
-                            }
-                        }
-                        else -> "Unknown Header: $header"
-                    }
-                    results.add(TestResult(file.name, true, status, file))
-                } catch (e: Exception) {
-                    results.add(TestResult(file.name, false, "Error reading", file))
+        files.forEach { file ->
+            val (header, magic) = readHeaderAndMagic(file) // readBytes()を完全に削除
+            val status = when (header) {
+                "EHBT" -> "Tink Hybrid"
+                "ERAW" -> "JCA Raw"
+                "EHBR" -> when (magic) {
+                    0x01 -> "JCA RawHybrid (Asymmetric 0x01)"
+                    0x02 -> "JCA RawHybrid (Symmetric 0x02)"
+                    else -> "JCA RawHybrid (Unknown)"
                 }
+                else -> "Unknown Header: $header"
             }
+            results.add(TestResult(file.name, true, status, file))
         }
         fileStatusResults.value = results
     }
