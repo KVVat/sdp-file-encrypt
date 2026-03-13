@@ -227,6 +227,7 @@ class RawHybridKeyProvider(
                 val encryptedContent = dataCipher.doFinal(plaintext)
                 val dataIv = dataCipher.iv
                 val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(256) }
+                //TSF does not store the ephemeral private key and relies on JVM object scope for transient cleanup
                 val ephemeralKeyPair = ephemeralKpg.generateKeyPair()
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
                 keyAgreement.init(ephemeralKeyPair.private)
