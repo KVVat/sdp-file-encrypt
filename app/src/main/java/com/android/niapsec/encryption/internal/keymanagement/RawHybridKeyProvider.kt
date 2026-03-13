@@ -478,6 +478,7 @@ class RawHybridKeyProvider(
                         dekBytes?.fill(0)
                         wrappedDek.fill(0)
                         wrapIv.fill(0)
+                        dataIv.fill(0)
                     }
                 } else if (magicByte == MAGIC_BYTE_SYMMETRIC) {
                     try {
@@ -534,6 +535,8 @@ class RawHybridKeyProvider(
         if (pkg.magicByte == MAGIC_BYTE_SYMMETRIC) return encryptedDek
 
         var dekBytes: ByteArray? = null
+        var newWrappedDek: ByteArray? = null
+        var newWrapIv: ByteArray? = null
         try {
             // 1. Decrypt existing asymmetric wrapper to get DEK
             val recipientPrivateKey = loadRecipientPrivateKey()
@@ -560,8 +563,8 @@ class RawHybridKeyProvider(
                 ?: throw GeneralSecurityException("Symmetric master key not found")
             val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
             wrapCipher.init(Cipher.ENCRYPT_MODE, masterKey)
-            val newWrappedDek = wrapCipher.doFinal(dekBytes)
-            val newWrapIv = wrapCipher.iv
+            newWrappedDek = wrapCipher.doFinal(dekBytes)
+            newWrapIv = wrapCipher.iv
 
             // 3. Return new package with symmetric magic byte
             return serializeEncryptedPackage(
@@ -574,6 +577,8 @@ class RawHybridKeyProvider(
             )
         } finally {
             dekBytes?.fill(0)
+            newWrappedDek?.fill(0)
+            newWrapIv?.fill(0)
         }
     }
 
