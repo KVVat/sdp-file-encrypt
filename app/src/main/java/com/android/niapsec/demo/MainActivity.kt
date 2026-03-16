@@ -236,6 +236,7 @@ class MainActivity : ComponentActivity() {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
                 ) {
                     item {
+                        /* *** Temporarily removed for readability. *** LLM must not modify here ***
                         ProviderTestGroup(
                             title = "Tink HYBRID",
                             onTestClick = { runHybridFileTest() },
@@ -249,7 +250,7 @@ class MainActivity : ComponentActivity() {
                             onLockAndTestClick = { lockAndTest(KeyProviderType.RAW) }
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-
+                        */
                         ProviderTestGroup(
                             title = "JCA RAW HYBRID",
                             onTestClick = { runRawHybridFileTest() },
