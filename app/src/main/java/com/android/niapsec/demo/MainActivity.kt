@@ -80,11 +80,22 @@ import com.android.niapsec.R
 import com.android.niapsec.demo.ui.theme.FileEncryptionLibTheme
 import com.android.niapsec.encryption.api.EncryptionManager
 import com.android.niapsec.encryption.api.KeyProviderType
+import com.android.niapsec.encryption.tools.SecurityAuditLogger
 import kotlinx.coroutines.launch
 import java.io.File
 
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        private const val PREFS_NAME = "demo_settings"
+        private const val KEY_SWEEP_ENABLED = "sweep_enabled"
+        private const val KEY_LOG_ENABLED = "log_enabled"
+    }
+
+    private val prefs by lazy { getSharedPreferences(PREFS_NAME, MODE_PRIVATE) }
+    private val sweepEnabled = mutableStateOf(true)
+    private val logEnabled = mutableStateOf(true)
 
     private val hybridFileKeyUri = "android-keystore://hybrid_file_key"
     private val rawFileKeyUri = "android-keystore://raw_file_key"
@@ -130,6 +141,10 @@ class MainActivity : ComponentActivity() {
         devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         compName = ComponentName(this, DeviceAdminReceiver::class.java)
 
+        sweepEnabled.value = prefs.getBoolean(KEY_SWEEP_ENABLED, true)
+        logEnabled.value = prefs.getBoolean(KEY_LOG_ENABLED, true)
+        SecurityAuditLogger.isAuditLogEnabled = logEnabled.value
+
         registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
         sweepAndRewrap()
 
@@ -157,8 +172,8 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val showDeleteConfirmation = remember { mutableStateOf(false) }
         var expanded by remember { mutableStateOf(false) }
-        var loggingChecked by remember { mutableStateOf(false) }
-        var sweepChecked by remember { mutableStateOf(false) }
+        var sweepChecked by sweepEnabled
+        var loggingChecked by logEnabled
 
         if (showDeleteConfirmation.value) {
             AlertDialog(
@@ -207,16 +222,16 @@ class MainActivity : ComponentActivity() {
                                 DropdownMenuItem(text = { Text(
                                     stringResource(R.string.enable_sweep)
                                 ) }, leadingIcon = {
-                                    Checkbox(checked = sweepChecked, onCheckedChange = { sweepChecked = it })
+                                    Checkbox(checked = sweepChecked, onCheckedChange = { toggleSweep(!sweepChecked) })
                                 }, onClick = {
-                                    sweepChecked = !sweepChecked
+                                    toggleSweep(!sweepChecked)
                                 })
                                 DropdownMenuItem(text = { Text(
                                     stringResource(R.string.enable_logging)
                                 )}, leadingIcon = {
-                                    Checkbox(checked = loggingChecked, onCheckedChange = { loggingChecked = it })
+                                    Checkbox(checked = loggingChecked, onCheckedChange = { toggleLog(!loggingChecked) })
                                 },onClick = {
-                                    loggingChecked = !loggingChecked
+                                    toggleLog(!loggingChecked)
                                 })
                             }
                         }
@@ -339,12 +354,24 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sweepAndRewrap() {
+        if (!sweepEnabled.value) return
         try {
             rawHybridManager.sweepAndRewrapPendingFiles()
             checkFileStatus()
         } catch (e: Exception) {
             Log.e("MainActivity", "Sweep failed", e)
         }
+    }
+
+    private fun toggleSweep(enabled: Boolean) {
+        sweepEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_SWEEP_ENABLED, enabled).apply()
+    }
+
+    private fun toggleLog(enabled: Boolean) {
+        logEnabled.value = enabled
+        SecurityAuditLogger.isAuditLogEnabled = enabled
+        prefs.edit().putBoolean(KEY_LOG_ENABLED, enabled).apply()
     }
 
     private fun readHeaderAndMagic(file: File): Pair<String, Int> {
