@@ -40,6 +40,14 @@
         </receiver>
 
         <receiver
+            android:name=".demo.RemoveAdminReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.niapsec.demo.ACTION_REMOVE_ADMIN" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".demo.DirectBootTestReceiver"
             android:directBootAware="true"  android:exported="true">
             <intent-filter>

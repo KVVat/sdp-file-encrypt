@@ -234,7 +234,7 @@ class RawHybridKeyProvider(
             } finally {
                 SecurityAuditLogger.logLine( "===== Encrypt symmetric =====")
                 //masterKey should be null at this point
-                SecurityAuditLogger.logKeyMaterial("Symmetric Master Key", masterKey?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
 
                 dekBytes.fill(0)
@@ -272,9 +272,9 @@ class RawHybridKeyProvider(
                 return serializeEncryptedPackage(MAGIC_BYTE_ASYMMETRIC, ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
             } finally {
                 SecurityAuditLogger.logLine( "===== Encrypt asymmetric =====")
-                SecurityAuditLogger.logKeyMaterial("Ephemeral Key pair Public Key", ephemeralKeyPair?.public?.encoded)
-                SecurityAuditLogger.logKeyMaterial("Ephemeral Key pair Private Key", ephemeralKeyPair?.private?.encoded)
-                SecurityAuditLogger.logKeyMaterial("Recipient UDR Key pair (Public Key)", recipientPubKey.encoded)
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephemeralKeyPair?.private?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Public Key)", recipientPubKey.encoded)
 
                 SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
                 SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
@@ -328,12 +328,16 @@ class RawHybridKeyProvider(
                     //Basically this line would not be passed.
                     SecurityAuditLogger.logLine( "===== Decrypt asymmetric =====")
                     //Private Key should be null
-                    SecurityAuditLogger.logKeyMaterial("Recipient UDR Key pair (Private Key)",
+                    SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Private Key)",
                         recipientPrivateKey?.encoded);
                     SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
                     SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
+                    SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
+                    pkg.ephemeralPublicKeyBytes?.fill(0)
                 } else {
                     SecurityAuditLogger.logLine( "===== Decrypt symmetric =====")
+                    val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
+                    SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
                     SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 }
 
@@ -381,11 +385,12 @@ class RawHybridKeyProvider(
 
         private fun newEncryptingStreamSymmetric(ciphertext: OutputStream, associatedData: ByteArray): OutputStream {
             val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
+            var masterKey: Key? = null
             try {
                 SecureRandom().nextBytes(dekBytes)
                 val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
 
-                val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
+                masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
                     ?: throw GeneralSecurityException("Symmetric master key not found")
                 val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                 wrapCipher.init(Cipher.ENCRYPT_MODE, masterKey)
@@ -413,6 +418,9 @@ class RawHybridKeyProvider(
 
                 return CipherOutputStream(ciphertext, dataCipher)
             } finally {
+                SecurityAuditLogger.logLine("===== Stream Encrypt symmetric =====")
+                SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0)
             }
         }
@@ -422,13 +430,14 @@ class RawHybridKeyProvider(
             val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
             var sharedSecret: ByteArray? = null
             var kekBytes: ByteArray? = null
+            var ephemeralKeyPair: KeyPair? = null
 
             try {
                 SecureRandom().nextBytes(dekBytes)
                 val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
 
                 val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(256) }
-                val ephemeralKeyPair = ephemeralKpg.generateKeyPair()
+                ephemeralKeyPair = ephemeralKpg.generateKeyPair()
 
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
                 keyAgreement.init(ephemeralKeyPair.private)
@@ -468,6 +477,13 @@ class RawHybridKeyProvider(
 
                 return CipherOutputStream(ciphertext, dataCipher)
             } finally {
+                SecurityAuditLogger.logLine("===== Stream Encrypt asymmetric =====")
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephemeralKeyPair?.private?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Public Key)", recipientPubKey.encoded)
+                SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
+                SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
+                SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
             }
         }
@@ -516,8 +532,12 @@ class RawHybridKeyProvider(
 
                         return CipherInputStream(ciphertext, dataCipher)
                     } finally {
+                        SecurityAuditLogger.logLine("===== Stream Decrypt asymmetric =====")
+                        SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Private Key)", recipientPrivateKey.encoded)
+                        SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
+                        SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
+                        SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                         ephKeyBytes.fill(0)
-
                         sharedSecret?.fill(0);
                         kekBytes?.fill(0)
                         dekBytes?.fill(0)
@@ -554,6 +574,10 @@ class RawHybridKeyProvider(
 
                         return CipherInputStream(ciphertext, dataCipher)
                     } finally {
+                        SecurityAuditLogger.logLine("===== Stream Decrypt symmetric =====")
+                        SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)",
+                            keyStore.getKey(symmetricMasterKeyAlias, null)?.encoded)
+                        SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                         dekBytes?.fill(0)
                     }
                 } else {
@@ -594,6 +618,10 @@ class RawHybridKeyProvider(
                 unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                 dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
             } finally {
+                SecurityAuditLogger.logLine("===== Rewrap: Decrypt asymmetric phase =====")
+                SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Private Key)", recipientPrivateKey.encoded)
+                SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
+                SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
                 sharedSecret?.fill(0);
                 kekBytes?.fill(0)
             }
@@ -616,6 +644,10 @@ class RawHybridKeyProvider(
                 pkg.dataIv
             )
         } finally {
+            SecurityAuditLogger.logLine("===== Rewrap: Re-encrypt symmetric phase =====")
+            SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)",
+                keyStore.getKey(symmetricMasterKeyAlias, null)?.encoded)
+            SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
             dekBytes?.fill(0)
             newWrappedDek?.fill(0)
             newWrapIv?.fill(0)

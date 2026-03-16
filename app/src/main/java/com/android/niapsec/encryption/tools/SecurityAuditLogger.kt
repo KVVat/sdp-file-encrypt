@@ -24,10 +24,10 @@ object SecurityAuditLogger {
     }
     fun logKeyMaterial(tag: String= TAG, name: String, bytes: ByteArray?) {
         if (!isAuditLogEnabled || bytes== null) {
-            Log.d("${name} AUDIT_LOGGER KMD",  "returns null (hardware backend)")
+            Log.d("${name} KMD",  "returns null (error or hardware backend)")
             return
         }
-        Log.d("${name} AUDIT_LOGGER KMD",  bytes.toHexString())
+        Log.d("${name} KMD",  bytes.toHexString())
         bytes.fill(0)
     }
 
