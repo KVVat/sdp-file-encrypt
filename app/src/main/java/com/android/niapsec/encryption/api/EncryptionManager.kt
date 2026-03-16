@@ -23,7 +23,6 @@ import com.android.niapsec.encryption.internal.TinkEncryptionProvider
 import com.android.niapsec.encryption.internal.keymanagement.HybridKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.RawHybridKeyProvider
 import com.android.niapsec.encryption.internal.keymanagement.RawKeyProvider
-import com.android.niapsec.encryption.internal.keymanagement.SecureKeyProvider
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -44,15 +43,12 @@ class EncryptionManager(
                 RawKeyProvider(context, masterKeyUri.replace("android-keystore://", ""), unlockedDeviceRequired)
             KeyProviderType.HYBRID ->
                 HybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
-            KeyProviderType.SECURE ->
-                SecureKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}")
-            KeyProviderType.RAW_HYBRID ->
+          KeyProviderType.RAW_HYBRID ->
                 RawHybridKeyProvider(context, masterKeyUri, unlockedDeviceRequired, "tink_keyset_${masterKeyUri.replace("android-keystore://", "")}", lockStatePollCount, lockStatePollIntervalMs)
         },
         when (providerType) {
             KeyProviderType.RAW -> "ERAW".toByteArray()
             KeyProviderType.HYBRID -> "EHBT".toByteArray()
-            KeyProviderType.SECURE -> "ESEC".toByteArray()
             KeyProviderType.RAW_HYBRID -> "EHBR".toByteArray()
         }
     )
