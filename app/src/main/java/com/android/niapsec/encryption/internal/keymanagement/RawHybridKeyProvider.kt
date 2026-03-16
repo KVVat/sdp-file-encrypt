@@ -21,6 +21,7 @@ import java.nio.channels.ReadableByteChannel
 import java.nio.channels.SeekableByteChannel
 import java.nio.channels.WritableByteChannel
 import java.security.GeneralSecurityException
+import java.security.Key
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -39,6 +40,27 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * [Security Component: Raw JCA Hybrid Encryption]
  * * Custom implementation using Java Cryptography Architecture (JCA) primitives.
+ * * This class provides direct control over key material life-cycle and memory management.
+ *
+ * [Compliance Note]
+ * * **FCS_STG_EXT.2 (Encrypted Key Storage):**
+ * - SATISFIED: Private keys are generated and stored directly within the Android Keystore
+ * (`AndroidKeyStore` provider), ensuring they are never exposed in plaintext to the application layer.
+ *
+ * * **FCS_CKM_EXT.4 (Key Destruction):**
+ * - SATISFIED: This implementation explicitly overwrites sensitive key material (DEK, Shared Secret)
+ * with zeros in `finally` blocks immediately after use. This provides deterministic destruction
+ * of keys in volatile memory, independent of Garbage Collection timing.
+ * - SATISFIED: Persistent keys are destroyed via `KeyStore.deleteEntry()` and `SharedPreferences.Editor.clear()`.
+ *
+ * * **FDP_DAR_EXT.2 (Sensitive Data Encryption):**
+ * - SATISFIED: Uses an asymmetric key scheme to allow data encryption even when the device is locked
+ * and the private key is unavailable.
+ *
+ * * **FIA_UAU_EXT.1 (Authentication for Cryptographic Operation):**
+ * - SATISFIED: Enforces user authentication policies at the OS level by configuring
+ * `KeyGenParameterSpec.Builder.setUnlockedDeviceRequired(true)`. This ensures that decryption
+ * operations fail if the device is not unlocked.
  */
 class RawHybridKeyProvider(
     private val context: Context,
@@ -126,7 +148,6 @@ class RawHybridKeyProvider(
                 // * ENFORCEMENT: Configures the TSF (Android Keystore) to reject key agreement operations
                 //   if the user has not authenticated (device locked).
                 .setUnlockedDeviceRequired(unlockedDeviceRequired)
-
                 .build()
 
             kpg.initialize(spec)
@@ -192,6 +213,7 @@ class RawHybridKeyProvider(
 
         private fun encryptSymmetric(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
             val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
+            var masterKey: Key? = null
             try {
                 SecureRandom().nextBytes(dekBytes)
                 val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
@@ -201,7 +223,7 @@ class RawHybridKeyProvider(
                 val encryptedContent = dataCipher.doFinal(plaintext)
                 val dataIv = dataCipher.iv
 
-                val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
+                masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
                     ?: throw GeneralSecurityException("Symmetric master key not found")
                 val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                 wrapCipher.init(Cipher.ENCRYPT_MODE, masterKey)
@@ -210,6 +232,11 @@ class RawHybridKeyProvider(
 
                 return serializeEncryptedPackage(MAGIC_BYTE_SYMMETRIC, null, wrappedDek, wrapIv, encryptedContent, dataIv)
             } finally {
+                SecurityAuditLogger.logLine( "===== Encrypt symmetric =====")
+                //masterKey should be null at this point
+                SecurityAuditLogger.logKeyMaterial("Symmetric Master Key", masterKey?.encoded)
+                SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
+
                 dekBytes.fill(0)
             }
         }
@@ -244,6 +271,7 @@ class RawHybridKeyProvider(
 
                 return serializeEncryptedPackage(MAGIC_BYTE_ASYMMETRIC, ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
             } finally {
+                SecurityAuditLogger.logLine( "===== Encrypt asymmetric =====")
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key pair Public Key", ephemeralKeyPair?.public?.encoded)
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key pair Private Key", ephemeralKeyPair?.private?.encoded)
                 SecurityAuditLogger.logKeyMaterial("Recipient UDR Key pair (Public Key)", recipientPubKey.encoded)
@@ -262,25 +290,23 @@ class RawHybridKeyProvider(
             var dekBytes: ByteArray? = null
             var sharedSecret: ByteArray? = null
             var kekBytes: ByteArray? = null
+            var recipientPrivateKey:Key? = null
             try {
                 if (pkg.magicByte == MAGIC_BYTE_ASYMMETRIC) {
-                    val recipientPrivateKey = loadRecipientPrivateKey()
+                    recipientPrivateKey = loadRecipientPrivateKey()
                     val ephemeralPubKeySpec = X509EncodedKeySpec(pkg.ephemeralPublicKeyBytes!!)
                     val ephemeralPublicKey = KeyFactory.getInstance(EC_KEY_ALGORITHM).generatePublic(ephemeralPubKeySpec)
 
-                    try {
-                        val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
-                        keyAgreement.init(recipientPrivateKey)
-                        keyAgreement.doPhase(ephemeralPublicKey, true)
-                        sharedSecret = keyAgreement.generateSecret()
-                        kekBytes = hkdfDerive(sharedSecret, masterKeyAlias.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes)
-                        val kekSpec = SecretKeySpec(kekBytes, DEK_ALGORITHM)
-                        val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
-                        unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
-                        dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
-                    } finally {
-                        sharedSecret?.fill(0); kekBytes?.fill(0)
-                    }
+                    val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
+                    keyAgreement.init(recipientPrivateKey)
+                    keyAgreement.doPhase(ephemeralPublicKey, true)
+                    sharedSecret = keyAgreement.generateSecret()
+                    kekBytes = hkdfDerive(sharedSecret, masterKeyAlias.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes)
+                    val kekSpec = SecretKeySpec(kekBytes, DEK_ALGORITHM)
+                    val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
+                    unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
+                    dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
+
                 } else if (pkg.magicByte == MAGIC_BYTE_SYMMETRIC) {
                     val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
                         ?: throw GeneralSecurityException("Symmetric master key not found")
@@ -300,11 +326,14 @@ class RawHybridKeyProvider(
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
                 if(pkg.magicByte == MAGIC_BYTE_ASYMMETRIC) {
                     //Basically this line would not be passed.
-                    SecurityAuditLogger.logLine( "Decrypt asymmetric")
+                    SecurityAuditLogger.logLine( "===== Decrypt asymmetric =====")
+                    //Private Key should be null
+                    SecurityAuditLogger.logKeyMaterial("Recipient UDR Key pair (Private Key)",
+                        recipientPrivateKey?.encoded);
                     SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
                     SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
                 } else {
-                    SecurityAuditLogger.logLine( "Decrypt symmetric")
+                    SecurityAuditLogger.logLine( "===== Decrypt symmetric =====")
                     SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 }
 
@@ -547,6 +576,7 @@ class RawHybridKeyProvider(
     override fun getStreamingAead(): StreamingAead = rawHybridStreamingAead
     override fun getUnlockDeviceRequired(): Boolean = unlockedDeviceRequired
     override fun rewrapKeyToSymmetricUdr(encryptedDek: ByteArray): ByteArray {
+
         val pkg = deserializeEncryptedPackage(encryptedDek)
         if (pkg.magicByte == MAGIC_BYTE_SYMMETRIC) return encryptedDek
 
