@@ -521,9 +521,6 @@ class RawHybridKeyProvider(
                         sharedSecret?.fill(0);
                         kekBytes?.fill(0)
                         dekBytes?.fill(0)
-                        wrappedDek.fill(0)
-                        wrapIv.fill(0)
-                        dataIv.fill(0)
                     }
                 } else if (magicByte == MAGIC_BYTE_SYMMETRIC) {
                     try {
@@ -554,10 +551,6 @@ class RawHybridKeyProvider(
                             GCMParameterSpec(GCM_TAG_LENGTH_BITS, dataIv)
                         )
                         dataCipher.updateAAD(associatedData)
-
-                        wrappedDek.fill(0)
-                        dataIv.fill(0)
-                        wrapIv.fill(0)
 
                         return CipherInputStream(ciphertext, dataCipher)
                     } finally {
@@ -601,7 +594,8 @@ class RawHybridKeyProvider(
                 unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                 dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
             } finally {
-                sharedSecret?.fill(0); kekBytes?.fill(0)
+                sharedSecret?.fill(0);
+                kekBytes?.fill(0)
             }
 
             // 2. Re-wrap DEK with symmetric master key
