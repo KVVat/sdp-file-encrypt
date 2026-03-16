@@ -5,11 +5,11 @@ import android.util.Log
 
 /**
  * [Security Component: Audit Logger]
- * NIAP/MDFPPラボ評価時の鍵確証エビデンスを取得するためのモジュール。
- * 本番リリース時は [isAuditLogEnabled] を必ず false に設定すること。
+ *
+ * [isAuditLogEnabled] should be false when the app is released.
  */
 object SecurityAuditLogger {
-    // 監査用トグルスイッチ
+    // toggle switch for audit
     var isAuditLogEnabled = true
 
     private const val TAG = "AUDIT_LOGGER KMD"
@@ -23,10 +23,12 @@ object SecurityAuditLogger {
         return logKeyMaterial(tag = TAG, name = name, bytes = bytes);
     }
     fun logKeyMaterial(tag: String= TAG, name: String, bytes: ByteArray?) {
-        if (!isAuditLogEnabled || bytes== null) return
-
-        Log.d(tag, "=== SECURITY AUDIT KEY MATERIAL: $name ===")
-        Log.d(tag,  bytes.toHexString())
+        if (!isAuditLogEnabled || bytes== null) {
+            Log.d("${name} AUDIT_LOGGER KMD",  "returns null (hardware backend)")
+            return
+        }
+        Log.d("${name} AUDIT_LOGGER KMD",  bytes.toHexString())
+        bytes.fill(0)
     }
 
     fun logLine(msg: String) {
