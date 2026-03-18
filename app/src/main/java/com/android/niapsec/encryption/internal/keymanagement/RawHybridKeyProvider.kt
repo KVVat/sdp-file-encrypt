@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
 import androidx.core.content.edit
+import com.android.niapsec.encryption.tools.CleanSecretKeySpec
 import com.android.niapsec.encryption.tools.SecurityAuditLogger
 import com.android.niapsec.encryption.tools.toHexDumpString
 import com.google.crypto.tink.Aead
@@ -35,7 +36,6 @@ import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
 import javax.crypto.KeyAgreement
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * [Security Component: Raw JCA Hybrid Encryption]
@@ -214,9 +214,10 @@ class RawHybridKeyProvider(
         private fun encryptSymmetric(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
             val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
             var masterKey: Key? = null
+            var dekSpec: CleanSecretKeySpec? = null
             try {
                 SecureRandom().nextBytes(dekBytes)
-                val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
+                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
                 val dataCipher = Cipher.getInstance(DATA_CIPHER)
                 dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
                 dataCipher.updateAAD(associatedData)
@@ -237,6 +238,10 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
 
+
+                if(dekSpec != null && !dekSpec.isDestroyed){
+                    dekSpec.destroy()
+                }
                 dekBytes.fill(0)
             }
         }
@@ -247,9 +252,13 @@ class RawHybridKeyProvider(
             var sharedSecret: ByteArray? = null
             var kekBytes: ByteArray? = null
             var ephemeralKeyPair: KeyPair? = null
+
+            var dekSpec: CleanSecretKeySpec? = null
+            var kekSpec: CleanSecretKeySpec? = null
+
             try {
                 SecureRandom().nextBytes(dekBytes)
-                val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
+                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
                 val dataCipher = Cipher.getInstance(DATA_CIPHER)
                 dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
                 dataCipher.updateAAD(associatedData)
@@ -263,7 +272,7 @@ class RawHybridKeyProvider(
                 keyAgreement.doPhase(recipientPubKey, true)
                 sharedSecret = keyAgreement.generateSecret()
                 kekBytes = hkdfDerive(sharedSecret, masterKeyAlias.toByteArray(Charsets.UTF_8), ephemeralKeyPair.public.encoded)
-                val kekSpec = SecretKeySpec(kekBytes, DEK_ALGORITHM)
+                kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
                 val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                 wrapCipher.init(Cipher.ENCRYPT_MODE, kekSpec)
                 val wrappedDek = wrapCipher.doFinal(dekBytes)
@@ -282,6 +291,13 @@ class RawHybridKeyProvider(
 
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
+
+                if(dekSpec != null && !dekSpec.isDestroyed){
+                    dekSpec.destroy()
+                }
+                if(kekSpec != null && !kekSpec.isDestroyed){
+                    kekSpec.destroy()
+                }
             }
         }
 
@@ -291,6 +307,10 @@ class RawHybridKeyProvider(
             var sharedSecret: ByteArray? = null
             var kekBytes: ByteArray? = null
             var recipientPrivateKey:Key? = null
+
+            var dekSpec: CleanSecretKeySpec? = null
+            var kekSpec: CleanSecretKeySpec? = null
+
             try {
                 if (pkg.magicByte == MAGIC_BYTE_ASYMMETRIC) {
                     recipientPrivateKey = loadRecipientPrivateKey()
@@ -302,7 +322,7 @@ class RawHybridKeyProvider(
                     keyAgreement.doPhase(ephemeralPublicKey, true)
                     sharedSecret = keyAgreement.generateSecret()
                     kekBytes = hkdfDerive(sharedSecret, masterKeyAlias.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes)
-                    val kekSpec = SecretKeySpec(kekBytes, DEK_ALGORITHM)
+                    kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
                     val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                     unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                     dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
@@ -319,8 +339,10 @@ class RawHybridKeyProvider(
                 }
 
                 val dataCipher = Cipher.getInstance(DATA_CIPHER)
-                dataCipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(dekBytes, DEK_ALGORITHM), GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.dataIv))
+                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
+                dataCipher.init(Cipher.DECRYPT_MODE, dekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.dataIv))
                 dataCipher.updateAAD(associatedData)
+
                 return dataCipher.doFinal(pkg.encryptedContent)
             } finally {
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
@@ -344,6 +366,14 @@ class RawHybridKeyProvider(
                 dekBytes?.fill(0)
                 kekBytes?.fill(0)
                 sharedSecret?.fill(0)
+                /*
+                if(dekSpec != null && !dekSpec.isDestroyed){
+                    dekSpec.destroy()
+                }
+                if(kekSpec != null && !kekSpec.isDestroyed){
+                    kekSpec.destroy()
+                }*/
+
             }
         }
     }
@@ -386,9 +416,11 @@ class RawHybridKeyProvider(
         private fun newEncryptingStreamSymmetric(ciphertext: OutputStream, associatedData: ByteArray): OutputStream {
             val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
             var masterKey: Key? = null
+            var dekSpec: CleanSecretKeySpec? = null
+
             try {
                 SecureRandom().nextBytes(dekBytes)
-                val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
+                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
 
                 masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
                     ?: throw GeneralSecurityException("Symmetric master key not found")
@@ -422,6 +454,9 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0)
+                if(dekSpec != null && !dekSpec.isDestroyed){
+                    dekSpec.destroy()
+                }
             }
         }
 
@@ -432,9 +467,12 @@ class RawHybridKeyProvider(
             var kekBytes: ByteArray? = null
             var ephemeralKeyPair: KeyPair? = null
 
+            var dekSpec: CleanSecretKeySpec? = null
+            var kekSpec: CleanSecretKeySpec? = null
+
             try {
                 SecureRandom().nextBytes(dekBytes)
-                val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
+                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
 
                 val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(256) }
                 ephemeralKeyPair = ephemeralKpg.generateKeyPair()
@@ -445,7 +483,7 @@ class RawHybridKeyProvider(
                 sharedSecret = keyAgreement.generateSecret()
 
                 kekBytes = hkdfDerive(sharedSecret, masterKeyAlias.toByteArray(Charsets.UTF_8), ephemeralKeyPair.public.encoded)
-                val kekSpec = SecretKeySpec(kekBytes, DEK_ALGORITHM)
+                kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
 
                 val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                 wrapCipher.init(Cipher.ENCRYPT_MODE, kekSpec)
@@ -471,9 +509,6 @@ class RawHybridKeyProvider(
                 dos.write(dataIv)
                 dos.flush()
 
-                wrapIv.fill(0)
-                wrappedDek.fill(0)
-                dataIv.fill(0)
 
                 return CipherOutputStream(ciphertext, dataCipher)
             } finally {
@@ -485,6 +520,13 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
+
+                if(dekSpec != null && !dekSpec.isDestroyed){
+                    dekSpec.destroy()
+                }
+                if(kekSpec != null && !kekSpec.isDestroyed){
+                    kekSpec.destroy()
+                }
             }
         }
 
@@ -493,6 +535,8 @@ class RawHybridKeyProvider(
             val magicByte = dis.readByte()
             var dekBytes: ByteArray? = null
 
+            var dekSpec: CleanSecretKeySpec? = null
+            var kekSpec: CleanSecretKeySpec? = null
             try {
                 if (magicByte == MAGIC_BYTE_ASYMMETRIC) {
                     val recipientPrivateKey = loadRecipientPrivateKey()
@@ -512,6 +556,7 @@ class RawHybridKeyProvider(
                     var sharedSecret: ByteArray? = null
                     var kekBytes: ByteArray? = null
 
+
                     try {
                         val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
                         keyAgreement.init(recipientPrivateKey)
@@ -519,14 +564,14 @@ class RawHybridKeyProvider(
                         sharedSecret = keyAgreement.generateSecret()
 
                         kekBytes = hkdfDerive(sharedSecret, masterKeyAlias.toByteArray(Charsets.UTF_8), ephKeyBytes)
-                        val kekSpec = SecretKeySpec(kekBytes, DEK_ALGORITHM)
+                        kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
 
                         val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                         unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, wrapIv))
                         dekBytes = unwrapCipher.doFinal(wrappedDek)
 
                         val dataCipher = Cipher.getInstance(DATA_CIPHER)
-                        val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
+                        dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
                         dataCipher.init(Cipher.DECRYPT_MODE, dekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, dataIv))
                         dataCipher.updateAAD(associatedData)
 
@@ -537,10 +582,15 @@ class RawHybridKeyProvider(
                         SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
                         SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
                         SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
-                        ephKeyBytes.fill(0)
-                        sharedSecret?.fill(0);
-                        kekBytes?.fill(0)
-                        dekBytes?.fill(0)
+                        ephKeyBytes.fill(0);sharedSecret?.fill(0);
+                        kekBytes?.fill(0);dekBytes?.fill(0)
+
+                        if(dekSpec != null && !dekSpec.isDestroyed){
+                            dekSpec.destroy()
+                        }
+                        if(kekSpec != null && !kekSpec.isDestroyed){
+                            kekSpec.destroy()
+                        }
                     }
                 } else if (magicByte == MAGIC_BYTE_SYMMETRIC) {
                     try {
@@ -564,7 +614,7 @@ class RawHybridKeyProvider(
                         dekBytes = unwrapCipher.doFinal(wrappedDek)
 
                         val dataCipher = Cipher.getInstance(DATA_CIPHER)
-                        val dekSpec = SecretKeySpec(dekBytes, DEK_ALGORITHM)
+                        dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
                         dataCipher.init(
                             Cipher.DECRYPT_MODE,
                             dekSpec,
@@ -579,6 +629,10 @@ class RawHybridKeyProvider(
                             keyStore.getKey(symmetricMasterKeyAlias, null)?.encoded)
                         SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                         dekBytes?.fill(0)
+
+                        if(dekSpec != null && !dekSpec.isDestroyed){
+                            dekSpec.destroy()
+                        }
                     }
                 } else {
                     throw IllegalArgumentException("Unsupported magic byte: $magicByte")
@@ -607,13 +661,14 @@ class RawHybridKeyProvider(
             val ephemeralPublicKey = KeyFactory.getInstance(EC_KEY_ALGORITHM).generatePublic(ephemeralPubKeySpec)
             var sharedSecret: ByteArray? = null
             var kekBytes: ByteArray? = null
+            var kekSpec: CleanSecretKeySpec? = null
             try {
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
                 keyAgreement.init(recipientPrivateKey)
                 keyAgreement.doPhase(ephemeralPublicKey, true)
                 sharedSecret = keyAgreement.generateSecret()
                 kekBytes = hkdfDerive(sharedSecret, masterKeyAlias.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes)
-                val kekSpec = SecretKeySpec(kekBytes, DEK_ALGORITHM)
+                kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
                 val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                 unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                 dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
@@ -624,6 +679,10 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
                 sharedSecret?.fill(0);
                 kekBytes?.fill(0)
+
+                if(kekSpec != null && !kekSpec.isDestroyed){
+                    kekSpec.destroy()
+                }
             }
 
             // 2. Re-wrap DEK with symmetric master key
