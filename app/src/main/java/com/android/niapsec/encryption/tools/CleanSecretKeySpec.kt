@@ -5,6 +5,7 @@ import javax.crypto.SecretKey
 
 /**
  * Custom SecretKeySpec class that implements the Destroyable interface.
+ * Default SecretKeySpec has destroy() interface derived from SecretKey, but not implemented.
  */
 class CleanSecretKeySpec(
     key: ByteArray,
