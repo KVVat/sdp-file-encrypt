@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.android.niapsec"
+    namespace = "com.android.niapsec.demo"
     compileSdk = 36
 
     defaultConfig {
@@ -38,13 +38,9 @@ android {
         compose = true
     }
 }
-configurations.all {
-    resolutionStrategy {
-        force("com.google.crypto.tink:tink-android:1.20.0")
-        force("com.google.crypto.tink:tink-core:1.20.0")
-    }
-}
+
 dependencies {
+    implementation(project(":encryption-lib"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -55,12 +51,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-    implementation("com.google.crypto.tink:tink-android:1.20.0")
-    constraints {
-        implementation("com.google.crypto.tink:tink-android:1.20.0") {
-            because("Ensure a consistent and modern version of Tink across all dependencies.")
-        }
-    }
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
