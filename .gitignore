@@ -1,6 +1,7 @@
 *.iml
 .gradle
 /.idea
+/.vscode
 /local.properties
 /.idea/caches
 /.idea/libraries
@@ -8,6 +9,8 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+/locked-device-demo/build
+/encryption-lib/build
 .DS_Store
 /build
 /captures
