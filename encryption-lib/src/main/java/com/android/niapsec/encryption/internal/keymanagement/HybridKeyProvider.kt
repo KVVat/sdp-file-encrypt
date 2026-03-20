@@ -116,8 +116,12 @@ class HybridKeyProvider(
     init {
         AeadConfig.register()
         HybridConfig.register()
-        createMasterKeyIfNeeded()
-        synchronizePublicKeyset()
+        try {
+            createMasterKeyIfNeeded()
+            synchronizePublicKeyset()
+        } catch (e: Exception) {
+            Log.w("HybridKeyProvider", "Initialization sync failed, will retry later: ${e.message}")
+        }
     }
 
     private fun getPublicKeysetHandle(): KeysetHandle {

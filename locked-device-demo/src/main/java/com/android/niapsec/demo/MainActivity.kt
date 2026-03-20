@@ -114,17 +114,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val hybridManager: EncryptionManager by lazy {
-        EncryptionManager(this, hybridFileKeyUri, providerType = KeyProviderType.HYBRID, unlockedDeviceRequired = true)
-    }
+    private var _hybridManager: EncryptionManager? = null
+    private val hybridManager: EncryptionManager
+        get() {
+            if (_hybridManager == null) {
+                _hybridManager = EncryptionManager(this, hybridFileKeyUri, providerType = KeyProviderType.HYBRID, unlockedDeviceRequired = true)
+            }
+            return _hybridManager!!
+        }
 
-    private val rawManager: EncryptionManager by lazy {
-        EncryptionManager(this, rawFileKeyUri, providerType = KeyProviderType.RAW, unlockedDeviceRequired = true)
-    }
+    private var _rawManager: EncryptionManager? = null
+    private val rawManager: EncryptionManager
+        get() {
+            if (_rawManager == null) {
+                _rawManager = EncryptionManager(this, rawFileKeyUri, providerType = KeyProviderType.RAW, unlockedDeviceRequired = true)
+            }
+            return _rawManager!!
+        }
 
-    private val rawHybridManager: EncryptionManager by lazy {
-        EncryptionManager(this, rawHybridFileKeyUri, providerType = KeyProviderType.RAW_HYBRID, unlockedDeviceRequired = true)
-    }
+    private var _rawHybridManager: EncryptionManager? = null
+    private val rawHybridManager: EncryptionManager
+        get() {
+            if (_rawHybridManager == null) {
+                _rawHybridManager = EncryptionManager(this, rawHybridFileKeyUri, providerType = KeyProviderType.RAW_HYBRID, unlockedDeviceRequired = true)
+            }
+            return _rawHybridManager!!
+        }
 
     private val testResults = mutableStateOf<List<TestResult>>(emptyList())
     private val fileStatusResults = mutableStateOf<List<TestResult>>(emptyList())
@@ -537,8 +552,11 @@ class MainActivity : ComponentActivity() {
 
     private fun clearAll() {
         hybridManager.destroy()
+        _hybridManager = null
         rawManager.destroy()
+        _rawManager = null
         rawHybridManager.destroy()
+        _rawHybridManager = null
         testResults.value = emptyList()
         fileStatusResults.value = emptyList()
         Log.d("ClearData", "All keys and data have been destroyed.")
