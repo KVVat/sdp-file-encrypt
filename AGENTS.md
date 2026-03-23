@@ -39,3 +39,4 @@ When providing code suggestions or analysis, adhere to the specific role of each
 
 4.  **No `AndroidOpenSSL` for Direct Key Generation**: Do not suggest creating keys using `AndroidOpenSSL` and storing them in plain files. All persistent keys or key-encrypting keys must be managed by the `AndroidKeyStore` provider, even for the "raw" provider.
 
+5.  **Tool Usage & Stream Output**: When executing commands or utilizing tools (like local MCP servers or Bash scripts), **never use shell redirection** (e.g., `> /tmp/output.txt`) to bypass output length limits or analyze large JSON. AI agents must **always process output directly from the standard stream** to avoid leaving unnecessary state or triggering file access permissions on the user's host environment.
