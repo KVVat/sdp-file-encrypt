@@ -99,8 +99,15 @@ class EncryptionManager(
         val tmpFile = File(destFile.absolutePath + ".tmp")
         try {
             sourceFile.inputStream().use { input ->
-                encryptToFileStream(tmpFile).use { output ->
-                    input.copyTo(output)
+                try {
+                    encryptToFileStream(tmpFile).use { output ->
+                        input.copyTo(output)
+                    }
+                } catch (e: java.lang.UnsupportedOperationException) {
+                    // Fallback to in-memory encryption if streaming is not supported
+                    encryptToFile(tmpFile).use { output ->
+                        input.copyTo(output)
+                    }
                 }
             }
             // Stream writing completed and closed successfully. Atomic rename:

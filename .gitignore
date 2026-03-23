@@ -11,6 +11,7 @@
 /.idea/assetWizardSettings.xml
 /locked-device-demo/build
 /encryption-lib/build
+/real-world-demo/build
 .DS_Store
 /build
 /captures
@@ -19,3 +20,5 @@
 local.properties
 AGENTS.md
 .log
+build_error_*.txt
+build_error.txt
