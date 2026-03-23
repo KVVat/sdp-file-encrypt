@@ -1,3 +1,19 @@
+/*
+ * Copyright (C) 2026 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.android.niapsec.encryption.internal.keymanagement
 
 import android.content.Context
@@ -30,6 +46,7 @@ import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.SecureRandom
+import java.security.spec.ECGenParameterSpec
 import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
@@ -143,7 +160,8 @@ class RawHybridKeyProvider(
                 masterKeyAlias,
                 KeyProperties.PURPOSE_AGREE_KEY
             )
-                .setDigests(KeyProperties.DIGEST_SHA256)
+                .setAlgorithmParameterSpec(ECGenParameterSpec("secp521r1"))
+                .setDigests(KeyProperties.DIGEST_SHA512)
                 // [FIA_UAU_EXT.1] Authentication for Cryptographic Operation
                 // * ENFORCEMENT: Configures the TSF (Android Keystore) to reject key agreement operations
                 //   if the user has not authenticated (device locked).
@@ -264,7 +282,7 @@ class RawHybridKeyProvider(
                 dataCipher.updateAAD(associatedData)
                 val encryptedContent = dataCipher.doFinal(plaintext)
                 val dataIv = dataCipher.iv
-                val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(256) }
+                val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(ECGenParameterSpec("secp521r1")) }
                 //TSF does not store the ephemeral private key and relies on JVM object scope for transient cleanup
                 ephemeralKeyPair = ephemeralKpg.generateKeyPair()
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
@@ -474,7 +492,7 @@ class RawHybridKeyProvider(
                 SecureRandom().nextBytes(dekBytes)
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
 
-                val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(256) }
+                val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(ECGenParameterSpec("secp521r1")) }
                 ephemeralKeyPair = ephemeralKpg.generateKeyPair()
 
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
