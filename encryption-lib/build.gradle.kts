@@ -39,7 +39,7 @@ configurations.all {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation("com.google.crypto.tink:tink-android:1.20.0")
+implementation("com.google.crypto.tink:tink-android:1.20.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

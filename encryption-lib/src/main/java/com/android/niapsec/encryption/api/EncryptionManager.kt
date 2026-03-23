@@ -87,6 +87,40 @@ class EncryptionManager(
     }
 
     /**
+     * Encrypts a source file to a destination file using streaming processing.
+     * Uses a temporary `.tmp` file during encryption to prevent corruption if interrupted,
+     * and atomically renames it to the destination file upon successful completion.
+     * 
+     * @param sourceFile The plaintext input file.
+     * @param destFile The target encrypted output file (e.g., `.enc`).
+     * @param deleteOriginal If true, safely deletes the source file upon success.
+     */
+    fun encryptFile(sourceFile: File, destFile: File, deleteOriginal: Boolean = true) {
+        val tmpFile = File(destFile.absolutePath + ".tmp")
+        try {
+            sourceFile.inputStream().use { input ->
+                encryptToFileStream(tmpFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            // Stream writing completed and closed successfully. Atomic rename:
+            if (!tmpFile.renameTo(destFile)) {
+                throw java.io.IOException("Failed to rename temporary encrypted file to target destination.")
+            }
+            // If successful and requested, delete original
+            if (deleteOriginal) {
+                sourceFile.delete()
+            }
+        } catch (e: Exception) {
+            // Clean up temporary file on failure
+            if (tmpFile.exists()) {
+                tmpFile.delete()
+            }
+            throw e
+        }
+    }
+
+    /**
      * Decrypts a file using streaming processing.
      */
     fun decryptFromFileStream(file: File): InputStream {
