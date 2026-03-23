@@ -2,13 +2,12 @@
 
 ## 1. Project Overview
 
-This is an Android application designed to demonstrate and compare different file encryption strategies, focusing on compliance with the **NIAP Mobile Device Fundamentals Protection Profile (MDF PP) Version 3.3**.
+This project provides an Android file encryption core library (`encryption-lib`) alongside a demonstration application (`locked-device-demo`). It is designed to demonstrate and compare different file encryption strategies, focusing on compliance with the **NIAP Mobile Device Fundamentals Protection Profile (MDF PP) Version 3.3**. Note that while the project is structured as a generic library, implementations of manual or unsafe patterns (such as `RawKeyProvider`) are kept for demonstration and educational purposes.
 
 The primary goal is to compare distinct `EncryptionProvider` implementations:
 - **`RawHybridKeyProvider`**: The **NIAP-compliant** reference implementation. It uses raw JCA primitives to strictly control key memory lifecycles (zeroization) and supports secure lock-state operations.
-- **`HybridKeyProvider`**: A standard implementation using **Google Tink's Hybrid Encryption** (ECIES).
-- **`SecureKeyProvider`**: A standard implementation using **Google Tink's Envelope Encryption** (AES-GCM).
-- **`RawKeyProvider`**: A manual implementation using raw Android JCA APIs (`Cipher`, `KeyStore`) wrapped in the Tink `Aead` interface.
+- **`HybridKeyProvider`**: A standard implementation using **Google Tink's Hybrid Encryption** (ECIES). While it is theoretically capable of meeting most requirements, strict memory zeroization (`FCS_CKM_EXT.4`) depends entirely on the Tink library's internals. Therefore, a completely compliant implementation is not provided.
+- **`RawKeyProvider`**: A manual implementation using raw Android JCA APIs. It was an earlier candidate, but due to the difficulty of satisfying the strict NIAP requirements, a complete implementation is not provided.
 
 ## 2. Security Architecture & Compliance
 
@@ -20,7 +19,7 @@ Unlike standard high-level wrappers, our `RawHybridKeyProvider` uses raw JCA pri
 * **Algorithm**: Hybrid Encryption Scheme (EC-DH + HKDF + AES-GCM).
 * **Compliance Features**:
     * **FCS_CKM_EXT.4 (Key Destruction)**: Explicitly zeroes out (overwrites) plain-text DEKs and shared secrets in volatile memory immediately after use via `finally` blocks. Standard high-level libraries often rely on Garbage Collection, which is insufficient for PP compliance.
-    * **FDP_DAR_EXT.2 (Locked State Operation)**: Supports encryption even when the device is locked (AFU/BFU) by leveraging a cached public key configuration, while keeping the private key securely hardware-backed in the TEE.
+    * **FDP_DAR_EXT.2 (Locked State Operation / Data at Rest)**: Fully and correctly implemented. Supports encryption even when the device is locked (AFU/BFU) by leveraging a cached public key configuration, while keeping the private key securely hardware-backed in the TEE. It also includes an automatic `FDP_DAR_EXT.2.4` sweep-and-rewrap mechanism that transitions files encrypted via asymmetric keys back to a more efficient symmetric encryption as soon as the device is unlocked.
     * **FCS_CKM_EXT.2 (Key Generation)**: Uses `SecureRandom` for generating ephemeral Data Encryption Keys (DEKs).
     * **FCS_STG_EXT.2 (Key Storage)**: Implements Envelope Encryption where DEKs are wrapped by a TEE-backed Key Encryption Key (KEK).
 
@@ -41,26 +40,21 @@ Unlike standard high-level wrappers, our `RawHybridKeyProvider` uses raw JCA pri
 - **Strategy**: Two-tier envelope encryption using the **Google Tink** library.
 - **KEK**: An `AES` key stored in the `AndroidKeyStore`.
 - **DEK**: A Tink-managed ECIES keyset.
-- **Note**: This implementation demonstrates the standard usage of Tink's Hybrid primitives. While secure for general use, it abstracts memory management, making it difficult to prove strict compliance with NIAP's volatile memory zeroization requirements (`FCS_CKM_EXT.4`).
-
-#### `SecureKeyProvider` (Tink Envelope)
-- **Strategy**: Standard envelope encryption using **Google Tink**.
-- **KEK**: An `AES-256-GCM` key stored in the `AndroidKeyStore`.
-- **DEK**: A Tink-managed `AES256_GCM` keyset, encrypted by the KEK.
-- **Note**: A solid, best-practice implementation for general use cases using symmetric keys.
+- **Note**: This implementation demonstrates the standard usage of Tink's Hybrid primitives. While secure for general use, it abstracts memory management, making it difficult to prove strict compliance with NIAP's volatile memory zeroization requirements (`FCS_CKM_EXT.4`). Since explicit zeroization would require modifying Tink itself, a fully compliant implementation is not provided.
 
 #### `RawKeyProvider` (JCA Adapter)
 - **Strategy**: A manual implementation wrapping standard Android JCA APIs (`Cipher`, `AndroidKeyStore`) into the Tink `Aead` interface.
 - **Algorithm**: `AES/CBC/PKCS7Padding`.
 - **Behavior**: Generates software-backed keys and imports them into the Keystore.
-- **Purpose**: Demonstrates how to adapt raw platform APIs to a common interface without using the full Tink library features.
+- **Purpose**: Demonstrates how to adapt raw platform APIs to a common interface without using the full Tink library features. It was an earlier candidate for the final implementation, but structural challenges in meeting strict compliance requirements mean a complete, NIAP-compliant version is not provided.
 
-### `EncryptionManager` & `MainActivity`
-- The `EncryptionManager` acts as a facade, providing a simple API for the `MainActivity` to interact with the different `EncryptionProvider`s.
-- The `MainActivity` provides a UI to run encryption/decryption tests for each provider, both in unlocked and locked states, and to display the results.
+### Core Library (`encryption-lib`)
+- Contains all core encryption logic, including the `EncryptionManager` (the facade API) and the various `EncryptionProvider` implementations. 
+- Some providers, like `RawKeyProvider`, represent specific historic or anti-pattern strategies and are deliberately retained to serve as test cases and comparative examples.
 
-### `DeviceAdminReceiver`
-- This component is required to programmatically lock the screen for the "Lock & Test" feature. The user must grant Device Administrator permissions to the app for this functionality to work.
+### Demo Application (`locked-device-demo`)
+- Contains a `MainActivity` that provides a UI to run encryption/decryption tests for each provider, both in unlocked and locked states, and to display the results.
+- Includes a `DeviceAdminReceiver` required to programmatically lock the screen for the "Lock & Test" feature. The user must grant Device Administrator permissions to the app for this functionality to work.
 
 ## 4. How to Build and Run
 

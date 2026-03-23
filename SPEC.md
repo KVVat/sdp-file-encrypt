@@ -47,7 +47,7 @@ The existing solution for handling sensitive data protection files I/O is based 
 ## 3. High-Level Design and Architecture
 
 ### 3.1 System Context
-The library can be included from Gradle settings and initially placed on GitHub packages.
+The project is structured as a core Android library module (`encryption-lib`) providing SDP features, alongside a demo application (`locked-device-demo`) for validation. The library can be included from Gradle settings and initially placed on GitHub packages. Note that older or unrecommended implementations like `RawKeyProvider` are deliberately kept in the codebase to facilitate comparative testing and demonstration.
 
 ### 3.2 Architectural Overview
 - Provide a Custom `KeyManager` for Tink.

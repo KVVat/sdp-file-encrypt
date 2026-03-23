@@ -116,6 +116,44 @@ class EncryptionManagerTest {
     }
 
     @Test
+    fun testRawHybridProvider_encryptFile_deletesOriginalByDefault() {
+        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
+        val sourceFile = getTestFile("source_to_delete.txt")
+        val destFile = getTestFile("dest_encrypted.enc")
+        
+        val randomText = "Some random text for encryptFile. " + generateLargeString(1000)
+        sourceFile.writeText(randomText)
+        
+        // Use the new encryptFile API (default deleteOriginal = true)
+        encryptionManager.encryptFile(sourceFile, destFile)
+        
+        assertTrue("Destination file should exist", destFile.exists())
+        assertTrue("Source file should be deleted", !sourceFile.exists())
+        
+        val decryptedText = encryptionManager.decryptFromFileStream(destFile).use { it.reader().readText() }
+        assertEquals("Decrypted text should match", randomText, decryptedText)
+    }
+
+    @Test
+    fun testRawHybridProvider_encryptFile_preservesOriginalWhenRequested() {
+        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
+        val sourceFile = getTestFile("source_to_keep.txt")
+        val destFile = getTestFile("dest_encrypted_keep.enc")
+        
+        val randomText = "Some random text that must be kept. " + generateLargeString(1000)
+        sourceFile.writeText(randomText)
+        
+        // Use the new encryptFile API with deleteOriginal = false
+        encryptionManager.encryptFile(sourceFile, destFile, deleteOriginal = false)
+        
+        assertTrue("Destination file should exist", destFile.exists())
+        assertTrue("Source file should still exist", sourceFile.exists())
+        
+        val decryptedText = encryptionManager.decryptFromFileStream(destFile).use { it.reader().readText() }
+        assertEquals(randomText, decryptedText)
+    }
+
+    @Test
     fun testRawProvider_encryptStream_throwsUnsupportedOperation() {
         // RAW provider (and others not updated) should NOT support streaming
         val encryptionManager = createManager(KeyProviderType.RAW)
@@ -141,43 +179,7 @@ class EncryptionManagerTest {
         assertEquals(originalContent, decryptedContent)
     }
 
-    @Test
-    fun testSecureProvider_legacyEncryptAndDecrypt_works() {
-        val encryptionManager = createManager(KeyProviderType.SECURE)
-        val testFile = getTestFile("secure_provider_test.txt")
-        val originalContent = "This is a secret message for the secure provider."
 
-        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-
-        assertEquals(originalContent, decryptedContent)
-    }
-
-    @Test
-    fun testSecureProvider_isUnavailableWhenDeviceIsLocked() {
-        val encryptionManager = createManager(KeyProviderType.SECURE, unlockedDeviceRequired = true)
-        val testFile = getTestFile("secure_provider_locked_test.txt")
-        val originalContent = "This should not be readable when locked."
-
-        if (!keyguardManager.isDeviceLocked) {
-            try {
-                encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-            } catch (e: GeneralSecurityException) {
-                fail("Encryption with a secure key failed unexpectedly while device is unlocked: ${e.message}")
-            }
-        }
-
-        assumeTrue("File for decryption does not exist. Run the test while unlocked first.", testFile.exists())
-        assumeTrue("This part of the test requires the device to be locked.", keyguardManager.isDeviceLocked)
-
-        try {
-            encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-            fail("Expected a GeneralSecurityException during decryption because the device is locked, but none was thrown.")
-        } catch (e: GeneralSecurityException) {
-            val message = e.message ?: ""
-            assertTrue("Exception should indicate a device lock issue.", message.contains("unusable") || message.contains("Device locked"))
-        }
-    }
 
     // --- String Encryption Tests ---
 

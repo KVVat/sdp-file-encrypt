@@ -9,7 +9,10 @@ The primary goal of this project is to demonstrate and compare different file en
 
 このプロジェクトの主な目的は、Android上での様々なファイル暗号化戦略を比較・実証することです。特に`AndroidKeyStore`システムの正しい使い方と間違った使い方に焦点を当てます。このプロジェクトは、セキュアなベストプラクティスに準拠した実装と、学習目的で意図的に安全でなくした実装とを明確に区別しなければなりません。
 
-## 2. Key Component Roles (主要コンポーネントの役割)
+## 2. Documentation and Language Policy
+**All documentation (including Markdown files) and source code comments MUST be written in English.** This is a strict requirement for all future updates and contributions.
+
+## 3. Key Component Roles (主要コンポーネントの役割)
 
 When providing code suggestions or analysis, adhere to the specific role of each `EncryptionProvider`.
 
