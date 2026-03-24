@@ -39,7 +39,7 @@ class CleanSecretKeySpec(
         if (isDestroyedFlag) {
             throw IllegalStateException("This key has already been destroyed.")
         }
-        return keyMaterial.clone()
+        return keyMaterial
     }
 
     override fun destroy() {
