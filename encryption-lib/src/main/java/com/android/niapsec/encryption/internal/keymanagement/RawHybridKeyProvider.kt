@@ -235,6 +235,7 @@ class RawHybridKeyProvider(
             var dekSpec: CleanSecretKeySpec? = null
             try {
                 SecureRandom().nextBytes(dekBytes)
+                dekBytes.fill(0xAA.toByte())
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
                 val dataCipher = Cipher.getInstance(DATA_CIPHER)
                 dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
@@ -384,13 +385,13 @@ class RawHybridKeyProvider(
                 dekBytes?.fill(0)
                 kekBytes?.fill(0)
                 sharedSecret?.fill(0)
-                /*
+
                 if(dekSpec != null && !dekSpec.isDestroyed){
                     dekSpec.destroy()
                 }
                 if(kekSpec != null && !kekSpec.isDestroyed){
                     kekSpec.destroy()
-                }*/
+                }
 
             }
         }
@@ -539,11 +540,11 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
 
-                if(dekSpec != null && !dekSpec!!.isDestroyed){
-                    dekSpec!!.destroy()
+                if(dekSpec != null && !dekSpec.isDestroyed){
+                    dekSpec.destroy()
                 }
-                if(kekSpec != null && !kekSpec!!.isDestroyed){
-                    kekSpec!!.destroy()
+                if(kekSpec != null && !kekSpec.isDestroyed){
+                    kekSpec.destroy()
                 }
             }
         }
@@ -648,8 +649,8 @@ class RawHybridKeyProvider(
                         SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                         dekBytes?.fill(0)
 
-                        if(dekSpec != null && !dekSpec!!.isDestroyed){
-                            dekSpec!!.destroy()
+                        if(dekSpec != null && !dekSpec.isDestroyed){
+                            dekSpec.destroy()
                         }
                     }
                 } else {
