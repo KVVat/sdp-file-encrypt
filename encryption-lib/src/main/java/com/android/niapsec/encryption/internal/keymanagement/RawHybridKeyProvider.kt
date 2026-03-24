@@ -235,7 +235,6 @@ class RawHybridKeyProvider(
             var dekSpec: CleanSecretKeySpec? = null
             try {
                 SecureRandom().nextBytes(dekBytes)
-                dekBytes.fill(0xAA.toByte())
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
                 val dataCipher = Cipher.getInstance(DATA_CIPHER)
                 dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
