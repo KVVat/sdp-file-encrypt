@@ -239,8 +239,6 @@ class RawHybridKeyProvider(
                 SecureRandom().nextBytes(dekBytes)
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
 
-                //dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
-
                 dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
                 dataCipher.updateAAD(associatedData)
                 val encryptedContent = dataCipher.doFinal(plaintext)
