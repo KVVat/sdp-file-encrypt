@@ -24,7 +24,6 @@ import android.util.Log
 import androidx.core.content.edit
 import com.android.niapsec.encryption.tools.CleanSecretKeySpec
 import com.android.niapsec.encryption.tools.SecurityAuditLogger
-import com.android.niapsec.encryption.tools.toHexDumpString
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.StreamingAead
 import com.google.crypto.tink.subtle.Hkdf
@@ -53,6 +52,7 @@ import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
 import javax.crypto.KeyAgreement
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * [Security Component: Raw JCA Hybrid Encryption]
@@ -230,13 +230,17 @@ class RawHybridKeyProvider(
         }
 
         private fun encryptSymmetric(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
-            val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
+            var dekBytes = ByteArray(DEK_SIZE_BITS / 8)
             var masterKey: Key? = null
             var dekSpec: CleanSecretKeySpec? = null
+            val dataCipher: Cipher =  Cipher.getInstance(DATA_CIPHER)
+
             try {
                 SecureRandom().nextBytes(dekBytes)
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
-                val dataCipher = Cipher.getInstance(DATA_CIPHER)
+
+                //dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
+
                 dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
                 dataCipher.updateAAD(associatedData)
                 val encryptedContent = dataCipher.doFinal(plaintext)
@@ -261,6 +265,13 @@ class RawHybridKeyProvider(
                     dekSpec.destroy()
                 }
                 dekBytes.fill(0)
+
+                try {
+                    val dummyZeroKey = SecretKeySpec(ByteArray(32), "AES") // オールゼロのダミー鍵
+                    dataCipher.init(Cipher.ENCRYPT_MODE, dummyZeroKey) // 内部状態を強制上書き
+                } catch (e: Exception) {
+                    // 例外が出ても握りつぶす（あくまでメモリクリア目的のため）
+                }
             }
         }
 
@@ -310,8 +321,8 @@ class RawHybridKeyProvider(
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
 
-                if(dekSpec != null && !dekSpec!!.isDestroyed){
-                    dekSpec!!.destroy()
+                if(dekSpec != null && !dekSpec.isDestroyed){
+                    dekSpec.destroy()
                 }
                 if(kekSpec != null && !kekSpec.isDestroyed){
                     kekSpec.destroy()
@@ -329,6 +340,8 @@ class RawHybridKeyProvider(
             var dekSpec: CleanSecretKeySpec? = null
             var kekSpec: CleanSecretKeySpec? = null
 
+            val dataCipher = Cipher.getInstance(DATA_CIPHER)
+            val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
             try {
                 if (pkg.magicByte == MAGIC_BYTE_ASYMMETRIC) {
                     recipientPrivateKey = loadRecipientPrivateKey()
@@ -341,7 +354,7 @@ class RawHybridKeyProvider(
                     sharedSecret = keyAgreement.generateSecret()
                     kekBytes = hkdfDerive(sharedSecret!!, masterKeyAlias.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes!!)
                     kekSpec = CleanSecretKeySpec(kekBytes!!, DEK_ALGORITHM)
-                    val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
+
                     unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                     dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
 
@@ -349,14 +362,12 @@ class RawHybridKeyProvider(
                     val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
                         ?: throw GeneralSecurityException("Symmetric master key not found")
 
-                    val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                     unwrapCipher.init(Cipher.DECRYPT_MODE, masterKey, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                     dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
                 } else {
                     throw IllegalArgumentException("Unsupported magic byte")
                 }
 
-                val dataCipher = Cipher.getInstance(DATA_CIPHER)
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
                 dataCipher.init(Cipher.DECRYPT_MODE, dekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.dataIv))
                 dataCipher.updateAAD(associatedData)
@@ -392,6 +403,25 @@ class RawHybridKeyProvider(
                     kekSpec.destroy()
                 }
 
+                try {
+                    // 例の「trackbreadcrumbs」を使うか、オールゼロを使うかはお好みで！
+                    val dummyZeroKey = SecretKeySpec(ByteArray(32), "AES")
+
+                    // GCMモードの「IV再利用エラー」を完全に回避するためのランダムIV生成
+                    val dummyIv = ByteArray(12)
+                    java.security.SecureRandom().nextBytes(dummyIv)
+                    val dummyParams = GCMParameterSpec(128, dummyIv)
+
+                    // dataCipher の内部キャッシュ（DEK）を吹き飛ばす
+                    dataCipher.init(Cipher.ENCRYPT_MODE, dummyZeroKey, dummyParams)
+
+                    // unwrapCipher の内部キャッシュ（KEK）も一緒に吹き飛ばす！
+                    unwrapCipher?.init(Cipher.ENCRYPT_MODE, dummyZeroKey, dummyParams)
+
+                } catch (e: Exception) {
+                    // 例外は安全に握りつぶす
+                    android.util.Log.w("NiapSecAudit", "Wipe hack failed (ignored): ${e.message}")
+                }
             }
         }
     }

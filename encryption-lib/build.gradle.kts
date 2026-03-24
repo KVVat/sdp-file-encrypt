@@ -1,3 +1,6 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     id("com.android.library")
     alias(libs.plugins.kotlin.android)
@@ -11,6 +14,8 @@ android {
         minSdk = 28
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    buildFeatures.buildConfig = true
 
     buildTypes {
         release {
@@ -28,6 +33,11 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    defaultConfig {
+        val dateFormat = SimpleDateFormat("yyMMdd")
+        val buildTime = dateFormat.format(Date())
+        buildConfigField("String", "BUILD_DATE", "\"${buildTime}\"")
+    }
 }
 
 configurations.all {
@@ -39,7 +49,7 @@ configurations.all {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-implementation("com.google.crypto.tink:tink-android:1.20.0")
+    implementation("com.google.crypto.tink:tink-android:1.20.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

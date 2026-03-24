@@ -22,3 +22,4 @@ AGENTS.md
 .log
 build_error_*.txt
 build_error.txt
+*.hprof

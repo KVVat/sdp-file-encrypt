@@ -15,9 +15,8 @@
  */
 
 package com.android.niapsec.encryption.tools
-
+import com.android.niapsec.encryption.BuildConfig
 import android.util.Log
-
 
 /**
  * [Security Component: Audit Logger]
@@ -48,7 +47,7 @@ object SecurityAuditLogger {
     }
 
     fun logLine(msg: String) {
-        logLine(tag = TAG, msg = msg)
+        logLine(tag = TAG+BuildConfig.BUILD_DATE, msg = msg)
     }
     fun logLine(tag:String,msg: String) {
         Log.d(tag,msg)
