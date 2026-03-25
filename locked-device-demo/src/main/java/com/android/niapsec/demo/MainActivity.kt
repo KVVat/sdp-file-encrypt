@@ -94,8 +94,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private val prefs by lazy { getSharedPreferences(PREFS_NAME, MODE_PRIVATE) }
+    private val niapSecPrefs by lazy { getSharedPreferences("niap_sec_prefs", MODE_PRIVATE) }
     private val sweepEnabled = mutableStateOf(true)
     private val logEnabled = mutableStateOf(true)
+    private val flushIterationsCount = mutableStateOf(64)
 
     private val hybridFileKeyUri = "android-keystore://hybrid_file_key"
     private val rawFileKeyUri = "android-keystore://raw_file_key"
@@ -158,6 +160,7 @@ class MainActivity : ComponentActivity() {
 
         sweepEnabled.value = prefs.getBoolean(KEY_SWEEP_ENABLED, true)
         logEnabled.value = prefs.getBoolean(KEY_LOG_ENABLED, true)
+        flushIterationsCount.value = niapSecPrefs.getInt("keystore_flush_iterations", 64)
         SecurityAuditLogger.isAuditLogEnabled = logEnabled.value
 
         registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
@@ -189,6 +192,8 @@ class MainActivity : ComponentActivity() {
         var expanded by remember { mutableStateOf(false) }
         var sweepChecked by sweepEnabled
         var loggingChecked by logEnabled
+        val showFlushIterationsDialog = remember { mutableStateOf(false) }
+        var flushIterationsInput by remember(flushIterationsCount.value) { mutableStateOf(flushIterationsCount.value.toString()) }
 
         if (showDeleteConfirmation.value) {
             AlertDialog(
@@ -210,6 +215,40 @@ class MainActivity : ComponentActivity() {
                 },
                 dismissButton = {
                     TextButton(onClick = { showDeleteConfirmation.value = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showFlushIterationsDialog.value) {
+            AlertDialog(
+                onDismissRequest = { showFlushIterationsDialog.value = false },
+                title = { Text("Set IPC Flush Iterations") },
+                text = {
+                    Column {
+                        Text("Configure how many times the Keystore IPC dummy flush request operation is repeated.")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        androidx.compose.material3.OutlinedTextField(
+                            value = flushIterationsInput,
+                            onValueChange = { flushIterationsInput = it },
+                            label = { Text("Iterations") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val newCount = flushIterationsInput.toIntOrNull() ?: 64
+                        flushIterationsCount.value = newCount
+                        niapSecPrefs.edit().putInt("keystore_flush_iterations", newCount).apply()
+                        showFlushIterationsDialog.value = false
+                    }) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showFlushIterationsDialog.value = false }) {
                         Text("Cancel")
                     }
                 }
@@ -247,6 +286,10 @@ class MainActivity : ComponentActivity() {
                                     Checkbox(checked = loggingChecked, onCheckedChange = { toggleLog(!loggingChecked) })
                                 },onClick = {
                                     toggleLog(!loggingChecked)
+                                })
+                                DropdownMenuItem(text = { Text("Set Flush Iterations") }, onClick = {
+                                    showFlushIterationsDialog.value = true
+                                    expanded = false
                                 })
                             }
                         }

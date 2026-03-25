@@ -96,6 +96,8 @@ class RawHybridKeyProvider(
     private val storageContext: Context = context.createDeviceProtectedStorageContext()
 
 
+
+
     private val prefs = storageContext.getSharedPreferences(keysetPrefName, Context.MODE_PRIVATE)
 
     companion object {
@@ -119,6 +121,36 @@ class RawHybridKeyProvider(
     init {
         generateAndStoreKeyPairIfNeeded()
         generateSymmetricMasterKeyIfNeeded()
+    }
+
+    private fun getFlushIterations(): Int {
+        return context.getSharedPreferences("niap_sec_prefs", Context.MODE_PRIVATE)
+                .getInt("keystore_flush_iterations", 64)
+    }
+
+    private fun flushKeystoreIpcBuffers() {
+        val iterations = getFlushIterations()
+        if (iterations <= 0) {
+            return // 設定が0以下の場合はフラッシュ処理をスキップ
+        }
+
+        val startTime = System.currentTimeMillis()
+        try {
+            val dummyDek = ByteArray(DEK_SIZE_BITS / 8)
+            val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null) ?: return
+            val flushCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
+
+            for (i in 0 until iterations) {
+                flushCipher.init(Cipher.ENCRYPT_MODE, masterKey)
+                flushCipher.doFinal(dummyDek)
+            }
+            val elapsed = System.currentTimeMillis() - startTime
+            Log.d("RawHybridKeyProvider", "Keystore IPC flush completed: $iterations iterations took ${elapsed}ms")
+            SecurityAuditLogger.logLine("Keystore IPC flush ($iterations runs) took ${elapsed}ms")
+        } catch (e: Exception) {
+            val elapsed = System.currentTimeMillis() - startTime
+            Log.w("RawHybridKeyProvider", "Keystore IPC flush failed after ${elapsed}ms: ${e.message}")
+        }
     }
 
     private fun generateSymmetricMasterKeyIfNeeded() {
@@ -259,8 +291,10 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
 
 
-                if(dekSpec != null && !dekSpec.isDestroyed){
-                    dekSpec.destroy()
+                dekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
                 dekBytes.fill(0)
 
@@ -270,6 +304,8 @@ class RawHybridKeyProvider(
                 } catch (e: Exception) {
                     // 例外が出ても握りつぶす（あくまでメモリクリア目的のため）
                 }
+flushKeystoreIpcBuffers()
+
             }
         }
 
@@ -319,11 +355,15 @@ class RawHybridKeyProvider(
                 // [FCS_CKM_EXT.4] Explicit zeroization: Prevent key remanence in memory
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
 
-                if(dekSpec != null && !dekSpec.isDestroyed){
-                    dekSpec.destroy()
+                dekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
-                if(kekSpec != null && !kekSpec.isDestroyed){
-                    kekSpec.destroy()
+                kekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
             }
         }
@@ -394,11 +434,15 @@ class RawHybridKeyProvider(
                 kekBytes?.fill(0)
                 sharedSecret?.fill(0)
 
-                if(dekSpec != null && !dekSpec.isDestroyed){
-                    dekSpec.destroy()
+                dekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
-                if(kekSpec != null && !kekSpec.isDestroyed){
-                    kekSpec.destroy()
+                kekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
 
                 try {
@@ -417,9 +461,10 @@ class RawHybridKeyProvider(
                     unwrapCipher?.init(Cipher.ENCRYPT_MODE, dummyZeroKey, dummyParams)
 
                 } catch (e: Exception) {
-                    // 例外は安全に握りつぶす
                     android.util.Log.w("NiapSecAudit", "Wipe hack failed (ignored): ${e.message}")
                 }
+                flushKeystoreIpcBuffers()
+
             }
         }
     }
@@ -500,8 +545,10 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0)
-                if(dekSpec != null && !dekSpec.isDestroyed){
-                    dekSpec.destroy()
+                dekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
             }
         }
@@ -567,11 +614,15 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
 
-                if(dekSpec != null && !dekSpec.isDestroyed){
-                    dekSpec.destroy()
+                dekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
-                if(kekSpec != null && !kekSpec.isDestroyed){
-                    kekSpec.destroy()
+                kekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
             }
         }
@@ -631,11 +682,15 @@ class RawHybridKeyProvider(
                         ephKeyBytes.fill(0);sharedSecret?.fill(0);
                         kekBytes?.fill(0);dekBytes?.fill(0)
 
-                        if(dekSpec != null && !dekSpec!!.isDestroyed){
-                            dekSpec!!.destroy()
+                        dekSpec?.let {
+                            if (!it.isDestroyed) {
+                                it.destroy()
+                            }
                         }
-                        if(kekSpec != null && !kekSpec!!.isDestroyed){
-                            kekSpec!!.destroy()
+                        kekSpec?.let {
+                            if (!it.isDestroyed) {
+                                it.destroy()
+                            }
                         }
                     }
                 } else if (magicByte == MAGIC_BYTE_SYMMETRIC) {
@@ -676,8 +731,10 @@ class RawHybridKeyProvider(
                         SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                         dekBytes?.fill(0)
 
-                        if(dekSpec != null && !dekSpec.isDestroyed){
-                            dekSpec.destroy()
+                        dekSpec?.let {
+                            if (!it.isDestroyed) {
+                                it.destroy()
+                            }
                         }
                     }
                 } else {
@@ -726,8 +783,10 @@ class RawHybridKeyProvider(
                 sharedSecret?.fill(0);
                 kekBytes?.fill(0)
 
-                if(kekSpec != null && !kekSpec.isDestroyed){
-                    kekSpec.destroy()
+                kekSpec?.let {
+                    if (!it.isDestroyed) {
+                        it.destroy()
+                    }
                 }
             }
 
