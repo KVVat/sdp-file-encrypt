@@ -125,7 +125,7 @@ class RawHybridKeyProvider(
 
     private fun getFlushIterations(): Int {
         return context.getSharedPreferences("niap_sec_prefs", Context.MODE_PRIVATE)
-                .getInt("keystore_flush_iterations", 64)
+                .getInt("keystore_flush_iterations", 8)
     }
 
     private fun flushKeystoreIpcBuffers() {
