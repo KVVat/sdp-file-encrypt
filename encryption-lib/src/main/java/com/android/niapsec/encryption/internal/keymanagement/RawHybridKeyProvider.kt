@@ -125,7 +125,7 @@ class RawHybridKeyProvider(
 
     private fun getFlushIterations(): Int {
         return context.getSharedPreferences("niap_sec_prefs", Context.MODE_PRIVATE)
-                .getInt("keystore_flush_iterations", 8)
+                .getInt("keystore_flush_iterations", 0)
     }
 
     private fun flushKeystoreIpcBuffers() {
@@ -269,8 +269,15 @@ class RawHybridKeyProvider(
 
             try {
                 SecureRandom().nextBytes(dekBytes)
-                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
+            
+                //Test Code
+                for (i in 0..31 step 2) {
+                    dekBytes[i] = (0x48).toByte()
+                    dekBytes[i+1] = (0x04).toByte()
+                }
 
+                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
+            
                 dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
                 dataCipher.updateAAD(associatedData)
                 val encryptedContent = dataCipher.doFinal(plaintext)
@@ -304,7 +311,7 @@ class RawHybridKeyProvider(
                 } catch (e: Exception) {
                     // 例外が出ても握りつぶす（あくまでメモリクリア目的のため）
                 }
-flushKeystoreIpcBuffers()
+                //flushKeystoreIpcBuffers()
 
             }
         }
@@ -463,7 +470,7 @@ flushKeystoreIpcBuffers()
                 } catch (e: Exception) {
                     android.util.Log.w("NiapSecAudit", "Wipe hack failed (ignored): ${e.message}")
                 }
-                flushKeystoreIpcBuffers()
+                //flushKeystoreIpcBuffers()
 
             }
         }
