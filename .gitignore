@@ -22,4 +22,5 @@ AGENTS.md
 .log
 build_error_*.txt
 build_error.txt
+firebase-debug.log
 *.hprof
