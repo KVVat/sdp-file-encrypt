@@ -50,6 +50,7 @@ configurations.all {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation("com.google.crypto.tink:tink-android:1.20.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.77")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

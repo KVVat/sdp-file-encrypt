@@ -333,7 +333,7 @@ class MainActivity : ComponentActivity() {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Button(onClick = { checkFileStatus() }) { Text("Check Status") }
-                            Button(onClick = { sweepAndRewrap() }) { Text("Manual Sweep") }
+                            Button(onClick = { encryptFileManual() }) { Text("Encrypt File") }
                         }
                         
                         Spacer(modifier = Modifier.height(16.dp))
@@ -418,6 +418,17 @@ class MainActivity : ComponentActivity() {
             checkFileStatus()
         } catch (e: Exception) {
             Log.e("MainActivity", "Sweep failed", e)
+        }
+    }
+
+    private fun encryptFileManual() {
+        val file = File(filesDir, "Manual-Encrypt-test_file.enc")
+        try {
+            val text = "This is a manual encrypted message."
+            rawHybridManager.encryptToFile(file).use { it.write(text.toByteArray()) }
+            checkFileStatus()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Manual encryption failed", e)
         }
     }
 
@@ -521,12 +532,32 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun ProviderTestGroup(title: String, onTestClick: () -> Unit, onLockAndTestClick: () -> Unit) {
+        var isProcessing by remember { mutableStateOf(false) }
+        
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = title, style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(onClick = onTestClick) { Text("Test File") }
-                Button(onClick = onLockAndTestClick) { Text("Lock & Test") }
+                Button(
+                    onClick = {
+                        if (!isProcessing) {
+                            isProcessing = true
+                            onTestClick()
+                            Handler(Looper.getMainLooper()).postDelayed({ isProcessing = false }, 1000)
+                        }
+                    },
+                    enabled = !isProcessing
+                ) { Text("Test File") }
+                Button(
+                    onClick = {
+                        if (!isProcessing) {
+                            isProcessing = true
+                            onLockAndTestClick()
+                            Handler(Looper.getMainLooper()).postDelayed({ isProcessing = false }, 1000)
+                        }
+                    },
+                    enabled = !isProcessing
+                ) { Text("Lock & Test") }
             }
         }
     }
