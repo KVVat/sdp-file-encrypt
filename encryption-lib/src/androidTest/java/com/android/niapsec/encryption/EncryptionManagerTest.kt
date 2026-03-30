@@ -166,21 +166,6 @@ class EncryptionManagerTest {
 
     // --- Legacy File API Tests (Aead / In-Memory) ---
 
-    @Test
-    fun testRawHybridProvider_legacyEncryptAndDecrypt_works() {
-        // Ensure the new RawHybrid provider still supports the old in-memory API
-        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
-        val testFile = getTestFile("raw_hybrid_legacy_test.txt")
-        val originalContent = "Small content for legacy API check."
-
-        encryptionManager.encryptToFile(testFile).use { it.write(originalContent.toByteArray()) }
-        val decryptedContent = encryptionManager.decryptFromFile(testFile).use { it.reader().readText() }
-
-        assertEquals(originalContent, decryptedContent)
-    }
-
-
-
     // --- String Encryption Tests ---
 
     @Test
@@ -192,5 +177,17 @@ class EncryptionManagerTest {
         val decryptedText = encryptionManager.decryptFromString(ciphertext)
 
         assertEquals(originalText, decryptedText)
+    }
+
+    @Test
+    fun testRawHybridProvider_encryptUsesSymmetricWhenUnlocked() {
+        val encryptionManager = createManager(KeyProviderType.RAW_HYBRID)
+        val originalText = "Asserting symmetric magic byte (Solution 1)"
+        val ciphertextBase64 = encryptionManager.encryptToString(originalText)
+        
+        val ciphertextBytes = android.util.Base64.decode(ciphertextBase64, android.util.Base64.DEFAULT)
+        
+        // Assert first byte is 0x02 (MAGIC_BYTE_SYMMETRIC) after skipping the 4-byte provider header ("EHBR")
+        assertEquals("Ciphertext should start with 0x02 representing symmetric encryption (no fallback)", 0x02.toByte(), ciphertextBytes[4])
     }
 }

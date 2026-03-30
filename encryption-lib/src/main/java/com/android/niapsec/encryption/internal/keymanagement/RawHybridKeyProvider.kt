@@ -22,6 +22,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
 import androidx.core.content.edit
+import com.android.niapsec.encryption.tools.Asn1Helper
 import com.android.niapsec.encryption.tools.CleanSecretKeySpec
 import com.android.niapsec.encryption.tools.SecurityAuditLogger
 import com.google.crypto.tink.Aead
@@ -120,7 +121,9 @@ class RawHybridKeyProvider(
 
     init {
         generateAndStoreKeyPairIfNeeded()
+        generateSymmetricEcKeyPairIfNeeded()
         generateSymmetricMasterKeyIfNeeded()
+        generateWrappingKeyIfNeeded()
     }
 
     private fun getFlushIterations(): Int {
@@ -172,6 +175,24 @@ class RawHybridKeyProvider(
         }
     }
 
+    private fun generateWrappingKeyIfNeeded() {
+        val wrappingKeyAlias = "${masterKeyAlias}_wrapping"
+        if (!keyStore.containsAlias(wrappingKeyAlias)) {
+            val kpg = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, ANDROID_KEYSTORE)
+            val spec = KeyGenParameterSpec.Builder(
+                wrappingKeyAlias,
+                KeyProperties.PURPOSE_WRAP_KEY
+            )
+                .setKeySize(2048)
+                .setDigests(KeyProperties.DIGEST_SHA256) // CTSに合わせ、SHA-256のみを指定
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
+                .setUnlockedDeviceRequired(unlockedDeviceRequired)
+                .build()
+            kpg.initialize(spec)
+            kpg.generateKeyPair()
+        }
+    }
+
     private fun generateAndStoreKeyPairIfNeeded() {
 
         if (keyStore.containsAlias(masterKeyAlias)) {
@@ -207,6 +228,50 @@ class RawHybridKeyProvider(
         }
     }
 
+    /**
+     * WORKAROUND [FCS_CKM_EXT.4]: Generates a dedicated hardware-backed EC key pair for Symmetric mode
+     * to perform ECDH key agreement. This is a workaround for the Keystore2 IPC memory leak
+     * observed when passing raw DEKs directly to Keystore2 for symmetric wrapping.
+     * By using ECDH, the raw DEK never leaves the application process during wrapping.
+     */
+    private fun generateSymmetricEcKeyPairIfNeeded() {
+        val symmetricEcAlias = "${masterKeyAlias}_symmetric_ec"
+        if (keyStore.containsAlias(symmetricEcAlias)) {
+            val prefsKey = "${KEY_PUBLIC_KEY_PREF}_symmetric"
+            if (!prefs.contains(prefsKey)) {
+                try {
+                    val entry = keyStore.getEntry(symmetricEcAlias, null) as? KeyStore.PrivateKeyEntry
+                    entry?.certificate?.publicKey?.let { publicKey ->
+                        saveSymmetricPublicKey(publicKey)
+                    }
+                } catch (e: Exception) {
+                    // Key might be broken
+                }
+            }
+        } else {
+            val kpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM, ANDROID_KEYSTORE)
+            val spec = KeyGenParameterSpec.Builder(
+                symmetricEcAlias,
+                KeyProperties.PURPOSE_AGREE_KEY
+            )
+                .setAlgorithmParameterSpec(ECGenParameterSpec("secp521r1"))
+                .setDigests(KeyProperties.DIGEST_SHA512)
+                .setUnlockedDeviceRequired(true) // ALWAYS UDR
+                .build()
+
+            kpg.initialize(spec)
+            val keyPair = kpg.generateKeyPair()
+
+            saveSymmetricPublicKey(keyPair.public)
+        }
+    }
+
+    private fun saveSymmetricPublicKey(publicKey: PublicKey) {
+        val prefsKey = "${KEY_PUBLIC_KEY_PREF}_symmetric"
+        val encodedKey = Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
+        prefs.edit().putString(prefsKey, encodedKey).apply()
+    }
+
     private fun savePublicKey(publicKey: PublicKey) {
         val encodedKey = Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
         prefs.edit().putString(KEY_PUBLIC_KEY_PREF, encodedKey).apply()
@@ -220,11 +285,30 @@ class RawHybridKeyProvider(
         return KeyFactory.getInstance(EC_KEY_ALGORITHM).generatePublic(spec)
     }
 
+    private fun loadSymmetricPublicKey(): PublicKey {
+        val prefsKey = "${KEY_PUBLIC_KEY_PREF}_symmetric"
+        val encodedKey = prefs.getString(prefsKey, null)
+            ?: throw GeneralSecurityException("Symmetric UDR public key not found in SharedPreferences.")
+        val bytes = Base64.decode(encodedKey, Base64.NO_WRAP)
+        val spec = X509EncodedKeySpec(bytes)
+        return KeyFactory.getInstance(EC_KEY_ALGORITHM).generatePublic(spec)
+    }
+
     private fun loadRecipientPrivateKey(): PrivateKey {
         val entry = keyStore.getEntry(masterKeyAlias, null)
             ?: throw GeneralSecurityException("Master key alias not found in Keystore: $masterKeyAlias")
         if (entry !is KeyStore.PrivateKeyEntry) {
             throw GeneralSecurityException("Keystore entry is not a private key: $masterKeyAlias")
+        }
+        return entry.privateKey
+    }
+
+    private fun loadSymmetricRecipientPrivateKey(): PrivateKey {
+        val symmetricEcAlias = "${masterKeyAlias}_symmetric_ec"
+        val entry = keyStore.getEntry(symmetricEcAlias, null)
+            ?: throw GeneralSecurityException("Symmetric UDR key alias not found in Keystore: $symmetricEcAlias")
+        if (entry !is KeyStore.PrivateKeyEntry) {
+            throw GeneralSecurityException("Keystore entry is not a private key: $symmetricEcAlias")
         }
         return entry.privateKey
     }
@@ -261,7 +345,7 @@ class RawHybridKeyProvider(
             return encryptAsymmetric(plaintext, associatedData)
         }
 
-        private fun encryptSymmetric(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
+        private fun _encryptSymmetric(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
             var dekBytes = ByteArray(DEK_SIZE_BITS / 8)
             var masterKey: Key? = null
             var dekSpec: CleanSecretKeySpec? = null
@@ -313,6 +397,56 @@ class RawHybridKeyProvider(
                 }
                 //flushKeystoreIpcBuffers()
 
+            }
+        }
+
+        private fun encryptSymmetric(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
+            val recipientPubKey = loadSymmetricPublicKey()
+            val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
+            var sharedSecret: ByteArray? = null
+            var kekBytes: ByteArray? = null
+            var ephemeralKeyPair: KeyPair? = null
+
+            var dekSpec: CleanSecretKeySpec? = null
+            var kekSpec: CleanSecretKeySpec? = null
+
+            try {
+                SecureRandom().nextBytes(dekBytes)
+                dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
+                val dataCipher = Cipher.getInstance(DATA_CIPHER)
+                dataCipher.init(Cipher.ENCRYPT_MODE, dekSpec)
+                dataCipher.updateAAD(associatedData)
+                val encryptedContent = dataCipher.doFinal(plaintext)
+                val dataIv = dataCipher.iv
+                val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(ECGenParameterSpec("secp521r1")) }
+                ephemeralKeyPair = ephemeralKpg.generateKeyPair()
+                
+                val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
+                keyAgreement.init(ephemeralKeyPair.private)
+                keyAgreement.doPhase(recipientPubKey, true)
+                sharedSecret = keyAgreement.generateSecret()
+                
+                // Use masterKeyAlias + "_symmetric" for context to distinguish from asymmetric HKDF context
+                val contextString = "${masterKeyAlias}_symmetric_ec"
+                kekBytes = hkdfDerive(sharedSecret!!, contextString.toByteArray(Charsets.UTF_8), ephemeralKeyPair.public.encoded)
+                kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
+                
+                val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
+                wrapCipher.init(Cipher.ENCRYPT_MODE, kekSpec)
+                val wrappedDek = wrapCipher.doFinal(dekBytes)
+                val wrapIv = wrapCipher.iv
+
+                return serializeEncryptedPackage(MAGIC_BYTE_SYMMETRIC, ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
+            } finally {
+                SecurityAuditLogger.logLine("===== Encrypt symmetric (Solution 2 - ECDH) =====")
+                SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
+                
+                dekBytes.fill(0)
+                sharedSecret?.fill(0)
+                kekBytes?.fill(0)
+
+                dekSpec?.let { if (!it.isDestroyed) it.destroy() }
+                kekSpec?.let { if (!it.isDestroyed) it.destroy() }
             }
         }
 
@@ -404,10 +538,20 @@ class RawHybridKeyProvider(
                     dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
 
                 } else if (pkg.magicByte == MAGIC_BYTE_SYMMETRIC) {
-                    val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
-                        ?: throw GeneralSecurityException("Symmetric master key not found")
+                    recipientPrivateKey = loadSymmetricRecipientPrivateKey()
+                    val ephemeralPubKeySpec = X509EncodedKeySpec(pkg.ephemeralPublicKeyBytes!!)
+                    val ephemeralPublicKey = KeyFactory.getInstance(EC_KEY_ALGORITHM).generatePublic(ephemeralPubKeySpec)
 
-                    unwrapCipher.init(Cipher.DECRYPT_MODE, masterKey, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
+                    val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
+                    keyAgreement.init(recipientPrivateKey!!)
+                    keyAgreement.doPhase(ephemeralPublicKey, true)
+                    sharedSecret = keyAgreement.generateSecret()
+                    
+                    val contextString = "${masterKeyAlias}_symmetric_ec"
+                    kekBytes = hkdfDerive(sharedSecret!!, contextString.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes!!)
+                    kekSpec = CleanSecretKeySpec(kekBytes!!, DEK_ALGORITHM)
+
+                    unwrapCipher.init(Cipher.DECRYPT_MODE, kekSpec, GCMParameterSpec(GCM_TAG_LENGTH_BITS, pkg.wrapIv))
                     dekBytes = unwrapCipher.doFinal(pkg.wrappedDek)
                 } else {
                     throw IllegalArgumentException("Unsupported magic byte")
@@ -511,6 +655,11 @@ class RawHybridKeyProvider(
             return newEncryptingStreamAsymmetric(ciphertext, associatedData)
         }
 
+        /**
+         * WARNING: This symmetric stream encryption is currently unsafe due to an Android Keystore2
+         * bug causing memory leakage of the plaintext DEK. This should be treated as a known risk
+         * until native hardware-backed streaming encryption is supported without exposing the software DEK.
+         */
         private fun newEncryptingStreamSymmetric(ciphertext: OutputStream, associatedData: ByteArray): OutputStream {
             val dekBytes = ByteArray(DEK_SIZE_BITS / 8)
             var masterKey: Key? = null
@@ -542,9 +691,8 @@ class RawHybridKeyProvider(
                 dos.write(dataIv)
                 dos.flush()
 
-                wrapIv.fill(0)
-                wrappedDek.fill(0)
-                dataIv.fill(0)
+                // Do not zeroize IVs here, as they might be references to Cipher internal state depending on provider.
+                // Leave them for GC or explicit wipe on close if we can track it.
 
                 return CipherOutputStream(ciphertext, dataCipher)
             } finally {
@@ -552,11 +700,13 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0)
-                dekSpec?.let {
-                    if (!it.isDestroyed) {
-                        it.destroy()
-                    }
-                }
+                // [FCS_CKM_EXT.4] & [FCS_STG_EXT.2] PREMATURE ZEROIZATION FIX: Do not destroy the key before stream is read.
+                // we should destroy it on close() of the stream.
+                // dekSpec?.let {
+                //     if (!it.isDestroyed) {
+                //         it.destroy()
+                //     }
+                // }
             }
         }
 
@@ -634,6 +784,10 @@ class RawHybridKeyProvider(
             }
         }
 
+        /**
+         * WARNING: This stream decryption is currently unsafe due to an Android Keystore2
+         * bug causing memory leakage of the plaintext DEK.
+         */
         override fun newDecryptingStream(ciphertext: InputStream, associatedData: ByteArray): InputStream {
             val dis = DataInputStream(ciphertext)
             val magicByte = dis.readByte()
@@ -689,11 +843,13 @@ class RawHybridKeyProvider(
                         ephKeyBytes.fill(0);sharedSecret?.fill(0);
                         kekBytes?.fill(0);dekBytes?.fill(0)
 
-                        dekSpec?.let {
-                            if (!it.isDestroyed) {
-                                it.destroy()
-                            }
-                        }
+                        // [FCS_CKM_EXT.4] & [FCS_STG_EXT.2] PREMATURE ZEROIZATION FIX: Do not destroy the key before stream is read.
+                        // we should destroy it on close() of the stream.
+                        // dekSpec?.let {
+                        //     if (!it.isDestroyed) {
+                        //         it.destroy()
+                        //     }
+                        // }
                         kekSpec?.let {
                             if (!it.isDestroyed) {
                                 it.destroy()
@@ -738,11 +894,13 @@ class RawHybridKeyProvider(
                         SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                         dekBytes?.fill(0)
 
-                        dekSpec?.let {
-                            if (!it.isDestroyed) {
-                                it.destroy()
-                            }
-                        }
+                        // [FCS_CKM_EXT.4] & [FCS_STG_EXT.2] PREMATURE ZEROIZATION FIX: Do not destroy the key before stream is read.
+                        // we should destroy it on close() of the stream.
+                        // dekSpec?.let {
+                        //     if (!it.isDestroyed) {
+                        //         it.destroy()
+                        //     }
+                        // }
                     }
                 } else {
                     throw IllegalArgumentException("Unsupported magic byte: $magicByte")
@@ -857,8 +1015,10 @@ private fun serializeEncryptedPackage(magicByte: Byte, ephemeralPublicKeyBytes: 
     val bos = ByteArrayOutputStream()
     DataOutputStream(bos).use {
         it.writeByte(magicByte.toInt())
-        if (magicByte == RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC) {
-            val ephKey = ephemeralPublicKeyBytes ?: throw IllegalArgumentException("Ephemeral public key required for asymmetric mode")
+        // WORKAROUND [FCS_CKM_EXT.4] Keystore2 Leak Fix: Both Asymmetric AND Symmetric modes now use ECDH
+        // (Hybrid Envelope Encryption) to avoid raw DEK exposure in Binder IPC.
+        if (magicByte == RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC || magicByte == RawHybridKeyProvider.MAGIC_BYTE_SYMMETRIC) {
+            val ephKey = ephemeralPublicKeyBytes ?: throw IllegalArgumentException("Ephemeral public key required for ECDH mode")
             it.writeInt(ephKey.size)
             it.write(ephKey)
         }
@@ -878,10 +1038,13 @@ private fun deserializeEncryptedPackage(ciphertext: ByteArray): EncryptedPackage
 
     val magicByte = buffer.get()
     var ephKey: ByteArray? = null
-    if (magicByte == RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC) {
+    
+    // WORKAROUND [FCS_CKM_EXT.4] Keystore2 Leak Fix: Both Asymmetric AND Symmetric modes now use ECDH 
+    // (Hybrid Envelope Encryption) to avoid raw DEK exposure in Binder IPC.
+    if (magicByte == RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC || magicByte == RawHybridKeyProvider.MAGIC_BYTE_SYMMETRIC) {
         val ephKeySize = buffer.int
         ephKey = ByteArray(ephKeySize).apply { buffer.get(this) }
-    } else if (magicByte != RawHybridKeyProvider.MAGIC_BYTE_SYMMETRIC) {
+    } else {
         throw IllegalArgumentException("Invalid magic byte or unsupported format: $magicByte")
     }
 
