@@ -455,6 +455,13 @@ class RawHybridKeyProvider(
 
             } finally {
                 SecurityAuditLogger.logLine("===== Encrypt symmetric (Solution 2 - ECDH) =====")
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
+                val ephPrivBytes = ephemeralKeyPair?.private?.encoded
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephPrivBytes)
+                ephPrivBytes?.fill(0)
+                SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Public Key)", recipientPubKey.encoded)
+                SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
+                SecurityAuditLogger.logKeyMaterial("Symmetric KEK", kekBytes)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 
                 dekBytes.fill(0)
@@ -490,7 +497,7 @@ class RawHybridKeyProvider(
 
                 ephemeralKeyPair = keyPair
 
-                                val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
+                val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
                 keyAgreement.init(keyPair.private)
 
                 keyAgreement.doPhase(recipientPubKey, true)
@@ -521,7 +528,9 @@ class RawHybridKeyProvider(
             } finally {
                 SecurityAuditLogger.logLine( "===== Encrypt asymmetric =====")
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
-                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephemeralKeyPair?.private?.encoded)
+                val ephPrivBytes = ephemeralKeyPair?.private?.encoded
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephPrivBytes)
+                ephPrivBytes?.fill(0)
                 SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Public Key)", recipientPubKey.encoded)
 
                 SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
@@ -810,11 +819,11 @@ val ephKeyBytes = keyPair.public.encoded
             } finally {
                 SecurityAuditLogger.logLine("===== Stream Encrypt asymmetric =====")
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
-val ephPrivBytes = ephemeralKeyPair?.private?.encoded
+                val ephPrivBytes = ephemeralKeyPair?.private?.encoded
 
-SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephPrivBytes)
+                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephPrivBytes)
 
-ephPrivBytes?.fill(0)
+                ephPrivBytes?.fill(0)
 
                 SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Public Key)", recipientPubKey.encoded)
                 SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
@@ -822,9 +831,9 @@ ephPrivBytes?.fill(0)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
 
-dekSpec?.let { if (!it.isDestroyed) it.destroy() }
+                dekSpec?.let { if (!it.isDestroyed) it.destroy() }
 
-kekSpec?.let { if (!it.isDestroyed) it.destroy() }
+                kekSpec?.let { if (!it.isDestroyed) it.destroy() }
 
             }
         }
