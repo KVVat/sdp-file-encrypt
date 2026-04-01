@@ -419,16 +419,24 @@ class RawHybridKeyProvider(
                 val encryptedContent = dataCipher.doFinal(plaintext)
                 val dataIv = dataCipher.iv
                 val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(ECGenParameterSpec("secp521r1")) }
-                ephemeralKeyPair = ephemeralKpg.generateKeyPair()
+                val keyPair = ephemeralKpg.generateKeyPair()
+
                 
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
-                keyAgreement.init(ephemeralKeyPair.private)
+                keyAgreement.init(keyPair.private)
+
                 keyAgreement.doPhase(recipientPubKey, true)
                 sharedSecret = keyAgreement.generateSecret()
                 
                 // Use masterKeyAlias + "_symmetric" for context to distinguish from asymmetric HKDF context
                 val contextString = "${masterKeyAlias}_symmetric_ec"
-                kekBytes = hkdfDerive(sharedSecret!!, contextString.toByteArray(Charsets.UTF_8), ephemeralKeyPair.public.encoded)
+                kekBytes =
+                        hkdfDerive(
+                                sharedSecret!!,
+                                contextString.toByteArray(Charsets.UTF_8),
+                                keyPair.public.encoded
+                        )
+
                 kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
                 
                 val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
@@ -436,7 +444,15 @@ class RawHybridKeyProvider(
                 val wrappedDek = wrapCipher.doFinal(dekBytes)
                 val wrapIv = wrapCipher.iv
 
-                return serializeEncryptedPackage(MAGIC_BYTE_SYMMETRIC, ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
+                return serializeEncryptedPackage(
+                        MAGIC_BYTE_SYMMETRIC,
+                        keyPair.public.encoded,
+                        wrappedDek,
+                        wrapIv,
+                        encryptedContent,
+                        dataIv
+                )
+
             } finally {
                 SecurityAuditLogger.logLine("===== Encrypt symmetric (Solution 2 - ECDH) =====")
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
@@ -470,19 +486,38 @@ class RawHybridKeyProvider(
                 val dataIv = dataCipher.iv
                 val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(ECGenParameterSpec("secp521r1")) }
                 //TSF does not store the ephemeral private key and relies on JVM object scope for transient cleanup
-                ephemeralKeyPair = ephemeralKpg.generateKeyPair()
-                val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
-                keyAgreement.init(ephemeralKeyPair!!.private)
+                val keyPair = ephemeralKpg.generateKeyPair()
+
+                ephemeralKeyPair = keyPair
+
+                                val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
+                keyAgreement.init(keyPair.private)
+
                 keyAgreement.doPhase(recipientPubKey, true)
                 sharedSecret = keyAgreement.generateSecret()
-                kekBytes = hkdfDerive(sharedSecret!!, masterKeyAlias.toByteArray(Charsets.UTF_8), ephemeralKeyPair!!.public.encoded)
-                kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
+                kekBytes =
+                        hkdfDerive(
+                                sharedSecret!!,
+                                masterKeyAlias.toByteArray(Charsets.UTF_8),
+                                keyPair.public.encoded
+                        )
+
+                kekSpec = CleanSecretKeySpec(kekBytes!!, DEK_ALGORITHM)
+
                 val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
                 wrapCipher.init(Cipher.ENCRYPT_MODE, kekSpec)
                 val wrappedDek = wrapCipher.doFinal(dekBytes)
                 val wrapIv = wrapCipher.iv
 
-                return serializeEncryptedPackage(MAGIC_BYTE_ASYMMETRIC, ephemeralKeyPair.public.encoded, wrappedDek, wrapIv, encryptedContent, dataIv)
+                return serializeEncryptedPackage(
+                        MAGIC_BYTE_ASYMMETRIC,
+                        keyPair.public.encoded,
+                        wrappedDek,
+                        wrapIv,
+                        encryptedContent,
+                        dataIv
+                )
+
             } finally {
                 SecurityAuditLogger.logLine( "===== Encrypt asymmetric =====")
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
@@ -725,14 +760,24 @@ class RawHybridKeyProvider(
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
 
                 val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(ECGenParameterSpec("secp521r1")) }
-                ephemeralKeyPair = ephemeralKpg.generateKeyPair()
+val keyPair = ephemeralKpg.generateKeyPair()
+
+ephemeralKeyPair = keyPair
+
 
                 val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
-                keyAgreement.init(ephemeralKeyPair!!.private)
+keyAgreement.init(keyPair.private)
+
                 keyAgreement.doPhase(recipientPubKey, true)
                 sharedSecret = keyAgreement.generateSecret()
 
-                kekBytes = hkdfDerive(sharedSecret!!, masterKeyAlias.toByteArray(Charsets.UTF_8), ephemeralKeyPair!!.public.encoded)
+kekBytes =
+        hkdfDerive(
+                sharedSecret!!,
+                masterKeyAlias.toByteArray(Charsets.UTF_8),
+                keyPair.public.encoded
+        )
+
                 kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
 
                 val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
@@ -748,7 +793,8 @@ class RawHybridKeyProvider(
                 // Write Header directly to the output stream
                 val dos = DataOutputStream(ciphertext)
                 dos.writeByte(MAGIC_BYTE_ASYMMETRIC.toInt())
-                val ephKeyBytes = ephemeralKeyPair.public.encoded
+val ephKeyBytes = keyPair.public.encoded
+
                 dos.writeInt(ephKeyBytes.size)
                 dos.write(ephKeyBytes)
                 dos.writeInt(wrappedDek.size)
@@ -764,23 +810,22 @@ class RawHybridKeyProvider(
             } finally {
                 SecurityAuditLogger.logLine("===== Stream Encrypt asymmetric =====")
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
-                SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephemeralKeyPair?.private?.encoded)
+val ephPrivBytes = ephemeralKeyPair?.private?.encoded
+
+SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephPrivBytes)
+
+ephPrivBytes?.fill(0)
+
                 SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Public Key)", recipientPubKey.encoded)
                 SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
                 SecurityAuditLogger.logKeyMaterial("Asymmetric KEK", kekBytes)
                 SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
                 dekBytes.fill(0); sharedSecret?.fill(0); kekBytes?.fill(0)
 
-                dekSpec?.let {
-                    if (!it.isDestroyed) {
-                        it.destroy()
-                    }
-                }
-                kekSpec?.let {
-                    if (!it.isDestroyed) {
-                        it.destroy()
-                    }
-                }
+dekSpec?.let { if (!it.isDestroyed) it.destroy() }
+
+kekSpec?.let { if (!it.isDestroyed) it.destroy() }
+
             }
         }
 
