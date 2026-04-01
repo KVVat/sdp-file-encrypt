@@ -458,7 +458,7 @@ class RawHybridKeyProvider(
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Public Key", ephemeralKeyPair?.public?.encoded)
                 val ephPrivBytes = ephemeralKeyPair?.private?.encoded
                 SecurityAuditLogger.logKeyMaterial("Ephemeral Key Pair Private Key", ephPrivBytes)
-                ephPrivBytes?.fill(0)
+                ephPrivBytes?.fill(0)//Have to clear just for this logging
                 SecurityAuditLogger.logKeyMaterial("Recipient UDR Key Pair (Public Key)", recipientPubKey.encoded)
                 SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
                 SecurityAuditLogger.logKeyMaterial("Symmetric KEK", kekBytes)
