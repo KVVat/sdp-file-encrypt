@@ -976,6 +976,11 @@ val ephKeyBytes = keyPair.public.encoded
         var dekBytes: ByteArray? = null
         var newWrappedDek: ByteArray? = null
         var newWrapIv: ByteArray? = null
+        var symmetricSharedSecret: ByteArray? = null
+        var symmetricKekBytes: ByteArray? = null
+        var symmetricKekSpec: CleanSecretKeySpec? = null
+        var ephemeralPublicKeyBytes: ByteArray? = null
+
         try {
             // 1. Decrypt existing asymmetric wrapper to get DEK
             val recipientPrivateKey = loadRecipientPrivateKey()
@@ -1002,25 +1007,33 @@ val ephKeyBytes = keyPair.public.encoded
                 sharedSecret?.fill(0);
                 kekBytes?.fill(0)
 
-                kekSpec?.let {
-                    if (!it.isDestroyed) {
-                        it.destroy()
-                    }
-                }
+                kekSpec?.let { if (!it.isDestroyed) it.destroy() }
             }
 
-            // 2. Re-wrap DEK with symmetric master key
-            val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
-                ?: throw GeneralSecurityException("Symmetric master key not found")
+            // 2. Re-wrap DEK with symmetric master key (using ECDH as per new Solution 2)
+            val symmetricRecipientPubKey = loadSymmetricPublicKey()
+            val ephemeralKpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM).apply { initialize(ECGenParameterSpec("secp521r1")) }
+            val keyPair = ephemeralKpg.generateKeyPair()
+            
+            val keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM)
+            keyAgreement.init(keyPair.private)
+            keyAgreement.doPhase(symmetricRecipientPubKey, true)
+            symmetricSharedSecret = keyAgreement.generateSecret()
+            
+            val contextString = "${masterKeyAlias}_symmetric_ec"
+            symmetricKekBytes = hkdfDerive(symmetricSharedSecret!!, contextString.toByteArray(Charsets.UTF_8), keyPair.public.encoded)
+            symmetricKekSpec = CleanSecretKeySpec(symmetricKekBytes!!, DEK_ALGORITHM)
+            
             val wrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)
-            wrapCipher.init(Cipher.ENCRYPT_MODE, masterKey)
+            wrapCipher.init(Cipher.ENCRYPT_MODE, symmetricKekSpec)
             newWrappedDek = wrapCipher.doFinal(dekBytes)
             newWrapIv = wrapCipher.iv
+            ephemeralPublicKeyBytes = keyPair.public.encoded
 
-            // 3. Return new package with symmetric magic byte
+            // 3. Return new package with symmetric magic byte and ephemeral public key
             return serializeEncryptedPackage(
                 MAGIC_BYTE_SYMMETRIC,
-                null,
+                ephemeralPublicKeyBytes,
                 newWrappedDek,
                 newWrapIv,
                 pkg.encryptedContent,
@@ -1028,12 +1041,18 @@ val ephKeyBytes = keyPair.public.encoded
             )
         } finally {
             SecurityAuditLogger.logLine("===== Rewrap: Re-encrypt symmetric phase =====")
-            SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)",
-                keyStore.getKey(symmetricMasterKeyAlias, null)?.encoded)
+            SecurityAuditLogger.logKeyMaterial("Symmetric Ephemeral Public Key", ephemeralPublicKeyBytes)
+            SecurityAuditLogger.logKeyMaterial("Symmetric Shared Secret", symmetricSharedSecret)
+            SecurityAuditLogger.logKeyMaterial("Symmetric KEK", symmetricKekBytes)
             SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
+            
             dekBytes?.fill(0)
             newWrappedDek?.fill(0)
             newWrapIv?.fill(0)
+            symmetricSharedSecret?.fill(0)
+            symmetricKekBytes?.fill(0)
+
+            symmetricKekSpec?.let { if (!it.isDestroyed) it.destroy() }
         }
     }
 
