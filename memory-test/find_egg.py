@@ -1,7 +1,7 @@
 import mmap
 
 # Pattern to search for: 32 bytes of 0x48 0x04 repeated 16 times
-pattern = bytes.fromhex("75624dfe1f416db63e516998d8649eaa114a6e6e1e3a105dd628d062c7c66caf")
+pattern = bytes.fromhex("016917548121da2088452ff55655aaa1849f8dde81d12918d8bc71a45db2c299b82a6da1fffbdb900c40e6876b1dc7a84d9f1af14ed5b5809b43b0375effed9ddbe5")
 filename = "main_ram_6gb.dump"
 
 
