@@ -24,10 +24,10 @@ import android.util.Log
 import androidx.core.content.edit
 import com.android.niapsec.encryption.tools.Asn1Helper
 import com.android.niapsec.encryption.tools.CleanSecretKeySpec
+import com.android.niapsec.encryption.tools.SafeHkdf
 import com.android.niapsec.encryption.tools.SecurityAuditLogger
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.StreamingAead
-import com.google.crypto.tink.subtle.Hkdf
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -314,7 +314,34 @@ class RawHybridKeyProvider(
     }
 
     private fun hkdfDerive(ikm: ByteArray, salt: ByteArray, info: ByteArray): ByteArray {
-        return Hkdf.computeHkdf("HmacSha256", ikm, salt, info, 32)
+        return SafeHkdf.computeHkdf(ikm, salt, info, 32)
+    }
+
+
+    /**
+     * Keystore2 / Binder IPC の共有バッファに残存したCBOR(66バイトの残骸)を
+     * ダミーデータで意図的に上書き(ポイズニング)する。
+     */
+    private fun flushKeystoreBinderBuffer(keystorePrivateKey: PrivateKey) {
+        try {
+            // 1. ダミーの公開鍵をソフトウェアで即席生成 (P-521)
+            val kpg = KeyPairGenerator.getInstance("EC")
+            kpg.initialize(java.security.spec.ECGenParameterSpec("secp521r1"))
+            val dummyPubKey = kpg.generateKeyPair().public
+
+            // 2. AndroidKeyStoreを明示指定してダミーの通信を準備
+            val dummyAgreement = KeyAgreement.getInstance("ECDH", "AndroidKeyStore")
+            dummyAgreement.init(keystorePrivateKey)
+            dummyAgreement.doPhase(dummyPubKey, true)
+            //Do poisoning
+            val dummySecret = dummyAgreement.generateSecret()
+            dummySecret?.fill(0)
+
+            Log.d("KMD", "Binder buffer successfully poisoned.")
+        } catch (e: Exception) {
+            // フラッシュの失敗はログに残すだけで、本筋の復号処理には影響させない
+            Log.w("KMD", "Binder buffer flush failed (ignored)", e)
+        }
     }
 
     /**
@@ -427,7 +454,7 @@ class RawHybridKeyProvider(
 
                 keyAgreement.doPhase(recipientPubKey, true)
                 sharedSecret = keyAgreement.generateSecret()
-                
+
                 // Use masterKeyAlias + "_symmetric" for context to distinguish from asymmetric HKDF context
                 val contextString = "${masterKeyAlias}_symmetric_ec"
                 kekBytes =
@@ -575,6 +602,8 @@ class RawHybridKeyProvider(
                     keyAgreement.init(recipientPrivateKey!!)
                     keyAgreement.doPhase(ephemeralPublicKey, true)
                     sharedSecret = keyAgreement.generateSecret()
+                    flushKeystoreBinderBuffer(recipientPrivateKey)
+
                     kekBytes = hkdfDerive(sharedSecret!!, masterKeyAlias.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes!!)
                     kekSpec = CleanSecretKeySpec(kekBytes!!, DEK_ALGORITHM)
 
@@ -590,7 +619,8 @@ class RawHybridKeyProvider(
                     keyAgreement.init(recipientPrivateKey!!)
                     keyAgreement.doPhase(ephemeralPublicKey, true)
                     sharedSecret = keyAgreement.generateSecret()
-                    
+                    flushKeystoreBinderBuffer(recipientPrivateKey)
+
                     val contextString = "${masterKeyAlias}_symmetric_ec"
                     kekBytes = hkdfDerive(sharedSecret!!, contextString.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes!!)
                     kekSpec = CleanSecretKeySpec(kekBytes!!, DEK_ALGORITHM)
@@ -622,7 +652,9 @@ class RawHybridKeyProvider(
                     SecurityAuditLogger.logLine( "===== Decrypt symmetric =====")
                     val masterKey = keyStore.getKey(symmetricMasterKeyAlias, null)
                     SecurityAuditLogger.logKeyMaterial("Symmetric UDR Key (used as KEK)", masterKey?.encoded)
-                    SecurityAuditLogger.logKeyMaterial("Data Encryption Key (DEK)", dekBytes)
+                    SecurityAuditLogger.logKeyMaterial("DEK", dekBytes)
+                    SecurityAuditLogger.logKeyMaterial("KEK", kekBytes)
+                    SecurityAuditLogger.logKeyMaterial("Shared Secret", sharedSecret)
                 }
 
                 dekBytes?.fill(0)
