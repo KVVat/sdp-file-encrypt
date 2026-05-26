@@ -65,7 +65,7 @@ fun ByteArray.toHexDumpString(): String = buildString {
         append("%08x  ".format(rowAddr))
 
         val hexPart = rowBytes.joinToString(" ") { "%02x".format(it) }
-        append(hexPart.padEnd(47)) // 16バイト分の幅を固定
+        append(hexPart.padEnd(47)) // Fixed width for 16 bytes
 
         append("  |")
         rowBytes.forEach {

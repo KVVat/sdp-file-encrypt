@@ -27,3 +27,4 @@ firebase-debug.log
 *.img
 /memory-test/*.img
 /memory-test/*.dump
+/.kotlin

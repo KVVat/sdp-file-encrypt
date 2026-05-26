@@ -461,7 +461,7 @@ class MainActivity : ComponentActivity() {
         val files = filesDir.listFiles()?.filter { it.name.endsWith(".enc") } ?: emptyList()
 
         files.forEach { file ->
-            val (header, magic) = readHeaderAndMagic(file) // readBytes()を完全に削除
+            val (header, magic) = readHeaderAndMagic(file) // Completely removed readBytes()
             val status = when (header) {
                 "EHBT" -> "Tink Hybrid"
                 "ERAW" -> "JCA Raw"

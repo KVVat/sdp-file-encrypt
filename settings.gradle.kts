@@ -19,4 +19,3 @@ dependencyResolutionManagement {
 rootProject.name = "FileEncryptionLib"
 include(":encryption-lib")
 include(":locked-device-demo")
-include(":real-world-demo")

@@ -111,8 +111,8 @@ class RawHybridKeyProvider(
         private const val DEK_SIZE_BITS = 256
         private const val DATA_CIPHER = "AES/GCM/NoPadding"
         private const val GCM_TAG_LENGTH_BITS = 128
-        const val MAGIC_BYTE_ASYMMETRIC: Byte = 0x01 // ロック中の一時保存（現在のHybrid方式）
-        const val MAGIC_BYTE_SYMMETRIC: Byte = 0x02  // ロック解除後の再暗号化（対称UDR方式）
+        const val MAGIC_BYTE_ASYMMETRIC: Byte = 0x01 // Temporary storage while locked (current Hybrid scheme)
+        const val MAGIC_BYTE_SYMMETRIC: Byte = 0x02  // Re-encrypted after unlock (symmetric UDR scheme)
 
     }
 
@@ -134,7 +134,7 @@ class RawHybridKeyProvider(
     private fun flushKeystoreIpcBuffers() {
         val iterations = getFlushIterations()
         if (iterations <= 0) {
-            return // 設定が0以下の場合はフラッシュ処理をスキップ
+            return // Skip flush processing if the setting is 0 or less
         }
 
         val startTime = System.currentTimeMillis()
@@ -184,7 +184,7 @@ class RawHybridKeyProvider(
                 KeyProperties.PURPOSE_WRAP_KEY
             )
                 .setKeySize(2048)
-                .setDigests(KeyProperties.DIGEST_SHA256) // CTSに合わせ、SHA-256のみを指定
+                .setDigests(KeyProperties.DIGEST_SHA256) // Specify SHA-256 only to align with CTS
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
                 .setUnlockedDeviceRequired(unlockedDeviceRequired)
                 .build()
@@ -207,7 +207,7 @@ class RawHybridKeyProvider(
                 }
             }
         } else {
-            // 新規生成
+            // New key generation
             val kpg = KeyPairGenerator.getInstance(EC_KEY_ALGORITHM, ANDROID_KEYSTORE)
             val spec = KeyGenParameterSpec.Builder(
                 masterKeyAlias,
@@ -319,17 +319,17 @@ class RawHybridKeyProvider(
 
 
     /**
-     * Keystore2 / Binder IPC の共有バッファに残存したCBOR(66バイトの残骸)を
-     * ダミーデータで意図的に上書き(ポイズニング)する。
+     * Intentionally overwrites (poisons) the residual CBOR (66-byte remnants)
+     * left in the Keystore2 / Binder IPC shared buffer with dummy data.
      */
     private fun flushKeystoreBinderBuffer(keystorePrivateKey: PrivateKey) {
         try {
-            // 1. ダミーの公開鍵をソフトウェアで即席生成 (P-521)
+            // 1. Instantly generate dummy public key in software (P-521)
             val kpg = KeyPairGenerator.getInstance("EC")
             kpg.initialize(java.security.spec.ECGenParameterSpec("secp521r1"))
             val dummyPubKey = kpg.generateKeyPair().public
 
-            // 2. AndroidKeyStoreを明示指定してダミーの通信を準備
+            // 2. Prepare dummy agreement by explicitly specifying AndroidKeyStore
             val dummyAgreement = KeyAgreement.getInstance("ECDH", "AndroidKeyStore")
             dummyAgreement.init(keystorePrivateKey)
             dummyAgreement.doPhase(dummyPubKey, true)
@@ -339,7 +339,7 @@ class RawHybridKeyProvider(
 
             Log.d("KMD", "Binder buffer successfully poisoned.")
         } catch (e: Exception) {
-            // フラッシュの失敗はログに残すだけで、本筋の復号処理には影響させない
+            // Flush failures are only logged and do not impact the main decryption process
             Log.w("KMD", "Binder buffer flush failed (ignored)", e)
         }
     }
@@ -417,10 +417,10 @@ class RawHybridKeyProvider(
                 dekBytes.fill(0)
 
                 try {
-                    val dummyZeroKey = SecretKeySpec(ByteArray(32), "AES") // オールゼロのダミー鍵
-                    dataCipher.init(Cipher.ENCRYPT_MODE, dummyZeroKey) // 内部状態を強制上書き
+                    val dummyZeroKey = SecretKeySpec(ByteArray(32), "AES") // All-zero dummy key
+                    dataCipher.init(Cipher.ENCRYPT_MODE, dummyZeroKey) // Force overwrite of internal state
                 } catch (e: Exception) {
-                    // 例外が出ても握りつぶす（あくまでメモリクリア目的のため）
+                    // Ignore any exceptions (solely for memory clearing purposes)
                 }
                 //flushKeystoreIpcBuffers()
 
@@ -673,18 +673,18 @@ class RawHybridKeyProvider(
                 }
 
                 try {
-                    // 例の「trackbreadcrumbs」を使うか、オールゼロを使うかはお好みで！
+                    // Use 'trackbreadcrumbs' or all-zeros as preferred!
                     val dummyZeroKey = SecretKeySpec(ByteArray(32), "AES")
 
-                    // GCMモードの「IV再利用エラー」を完全に回避するためのランダムIV生成
+                    // Random IV generation to completely avoid 'IV reuse error' in GCM mode
                     val dummyIv = ByteArray(12)
                     java.security.SecureRandom().nextBytes(dummyIv)
                     val dummyParams = GCMParameterSpec(128, dummyIv)
 
-                    // dataCipher の内部キャッシュ（DEK）を吹き飛ばす
+                    // Wipe the internal cache (DEK) of dataCipher
                     dataCipher.init(Cipher.ENCRYPT_MODE, dummyZeroKey, dummyParams)
 
-                    // unwrapCipher の内部キャッシュ（KEK）も一緒に吹き飛ばす！
+                    // Also wipe the internal cache (KEK) of unwrapCipher!
                     unwrapCipher?.init(Cipher.ENCRYPT_MODE, dummyZeroKey, dummyParams)
 
                 } catch (e: Exception) {
