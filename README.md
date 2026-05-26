@@ -1,4 +1,4 @@
-# SDP File Encryption Demo
+# Android SDP File Encryption Demo
 
 ## 1. Project Overview
 
