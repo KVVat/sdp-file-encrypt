@@ -4,24 +4,39 @@ import sys
 
 def run_adb_cmd(cmd):
     # Runs adb shell command as root
-    full_cmd = ["adb", "shell", f"su 0 {cmd}"]
+    full_cmd = ["/usr/local/google/home/wkouki/Android/Sdk/platform-tools/adb", "shell", f"su 0 {cmd}"]
     result = subprocess.run(full_cmd, capture_output=True)
     return result.stdout, result.stderr
 
 def main():
+    process_name = "android.hardware.security.keymint-service.rust.trusty"
+    short_name = "keymint"
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "keystore2":
+            process_name = "keystore2"
+            short_name = "keystore2"
+        elif sys.argv[1] == "keymint":
+            # Keep default Trusty KeyMint
+            pass
+        else:
+            process_name = sys.argv[1]
+            short_name = process_name.split(".")[-1]
+
     print("[*] Setting SELinux to Permissive...")
     run_adb_cmd("setenforce 0")
 
-    print("[*] Finding PID of android.hardware.security.keymint-service.rust.trusty...")
-    stdout, _ = run_adb_cmd("ps -A | grep keymint-service.rust.trusty")
+    print(f"[*] Finding PID of {process_name}...")
+    stdout, _ = run_adb_cmd(f"ps -A | grep '{process_name}'")
     lines = stdout.decode('utf-8').strip().split('\n')
-    if not lines or not lines[0]:
-        print("[!] KeyMint Rust service not found!")
+    # Filter lines that actually match the process name exactly to avoid grep noise
+    matching_lines = [l for l in lines if process_name in l]
+    if not matching_lines or not matching_lines[0]:
+        print(f"[!] Process {process_name} not found!")
         sys.exit(1)
     
-    parts = re.split(r'\s+', lines[0])
+    parts = re.split(r'\s+', matching_lines[0])
     pid = parts[1]
-    print(f"[+] Found KeyMint Rust service PID: {pid}")
+    print(f"[+] Found {process_name} PID: {pid}")
 
     print(f"[*] Reading /proc/{pid}/maps...")
     maps_out, _ = run_adb_cmd(f"cat /proc/{pid}/maps")
@@ -60,12 +75,12 @@ def main():
         if segment_bytes:
             combined_dump.extend(segment_bytes)
 
-    dump_filename = "scratch/keymint_heap.dump"
-    print(f"[*] Writing {len(combined_dump)} bytes of KeyMint RAM to {dump_filename}...")
+    dump_filename = f"scratch/{short_name}_heap.dump"
+    print(f"[*] Writing {len(combined_dump)} bytes of {short_name} RAM to {dump_filename}...")
     with open(dump_filename, "wb") as f:
         f.write(combined_dump)
 
-    print("[+] Dump complete! Running string analysis on the dump...")
+    print(f"[+] Dump complete! Running string analysis on the dump...")
     
     # Simple ASCII string extractor (min 4 chars)
     ascii_strings = []
@@ -78,7 +93,7 @@ def main():
                 ascii_strings.append("".join(current_str))
             current_str = []
             
-    print(f"[+] Found {len(ascii_strings)} ASCII strings in KeyMint RAM.")
+    print(f"[+] Found {len(ascii_strings)} ASCII strings in {short_name} RAM.")
     print("--- Sample Strings (first 50) ---")
     for s in ascii_strings[:50]:
         print(f"  {s}")
