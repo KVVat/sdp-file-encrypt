@@ -380,11 +380,7 @@ class RawHybridKeyProvider(
             try {
                 SecureRandom().nextBytes(dekBytes)
             
-                //Test Code
-                for (i in 0..31 step 2) {
-                    dekBytes[i] = (0x48).toByte()
-                    dekBytes[i+1] = (0x04).toByte()
-                }
+
 
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
             
@@ -743,11 +739,7 @@ class RawHybridKeyProvider(
             try {
                 SecureRandom().nextBytes(dekBytes)
                 
-                // Test Pattern Injection
-                for (i in 0..31 step 2) {
-                    dekBytes[i] = (0x48).toByte()
-                    dekBytes[i+1] = (0x04).toByte()
-                }
+
                 
                 dekSpec = CleanSecretKeySpec(dekBytes, DEK_ALGORITHM)
 
