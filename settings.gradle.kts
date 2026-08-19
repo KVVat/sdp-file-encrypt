@@ -19,3 +19,5 @@ dependencyResolutionManagement {
 rootProject.name = "FileEncryptionLib"
 include(":encryption-lib")
 include(":locked-device-demo")
+include(":minimal-jca-tester")
+include(":mock-id-wallet")
