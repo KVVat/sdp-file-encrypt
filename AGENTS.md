@@ -46,3 +46,8 @@ When providing code suggestions, debugging, or analyzing the codebase, strictly 
 4.  **No Direct Plaintext Key Files Outside KeyStore**: Do not create or save raw persistent key material directly onto the filesystem. All persistent keys or key-encrypting keys must reside inside the `AndroidKeyStore` system, even for the software-backed keys imported by the `RawKeyProvider`.
 
 5.  **Tool Usage & Stream Output**: When executing terminal commands or running scripts (such as ADB commands or local automation utilities), **never redirect standard output to external files** (e.g., `> /tmp/output.txt`) to process large JSON or UI dumps. AI agents must **always consume and process output directly from the standard stream** to prevent leaving unnecessary files on the host environment and avoid triggering file-system permission popups.
+
+6.  **Strict Prohibition of Unsolicited Code Modifications & Builds (See also `GEMINI.md`)**:
+    *   **NEVER modify source code files** (neither in this project nor in linked Android platform source trees such as `/usr/local/google/home/wkouki/android-26Q2`) without **explicit instruction or prior confirmation** from the user.
+    *   When the user shares emails, logs, or reflections (e.g., *"They replied with this..."* or *"I guess we might have to make an image..."*), **limit your response to read-only analysis and discussion**. Do NOT autonomously edit source files, create patches, or start builds/device operations until the user explicitly tells you to proceed.
+
