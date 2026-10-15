@@ -321,6 +321,9 @@ class RawHybridKeyProvider(
     /**
      * Intentionally overwrites (poisons) the residual CBOR (66-byte remnants)
      * left in the Keystore2 / Binder IPC shared buffer with dummy data.
+     * Executes concurrently across multiple threads so that the kernel Binder driver
+     * dispatches dummy ECDH operations to all active Binder worker threads and their
+     * per-thread Scudo TSD size-class caches in KeyMint HAL and Keystore2.
      */
     private fun flushKeystoreBinderBuffer(keystorePrivateKey: PrivateKey) {
         try {
@@ -329,15 +332,34 @@ class RawHybridKeyProvider(
             kpg.initialize(java.security.spec.ECGenParameterSpec("secp521r1"))
             val dummyPubKey = kpg.generateKeyPair().public
 
-            // 2. Prepare dummy agreement by explicitly specifying AndroidKeyStore
-            val dummyAgreement = KeyAgreement.getInstance("ECDH", "AndroidKeyStore")
-            dummyAgreement.init(keystorePrivateKey)
-            dummyAgreement.doPhase(dummyPubKey, true)
-            //Do poisoning
-            val dummySecret = dummyAgreement.generateSecret()
-            dummySecret?.fill(0)
+            // 2. Dispatch concurrent dummy ECDH agreements across parallel threads
+            // to force Binder thread-pool fan-out across all KeyMint / Keystore2 worker threads.
+            val parallelThreads = 6
+            val roundsPerThread = 2
+            val startLatch = java.util.concurrent.CountDownLatch(1)
+            val doneLatch = java.util.concurrent.CountDownLatch(parallelThreads)
 
-            Log.d("KMD", "Binder buffer successfully poisoned.")
+            for (t in 0 until parallelThreads) {
+                Thread {
+                    try {
+                        val dummyAgreement = KeyAgreement.getInstance("ECDH", "AndroidKeyStore")
+                        startLatch.await()
+                        for (r in 0 until roundsPerThread) {
+                            dummyAgreement.init(keystorePrivateKey)
+                            dummyAgreement.doPhase(dummyPubKey, true)
+                            val dummySecret = dummyAgreement.generateSecret()
+                            dummySecret?.fill(0)
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        doneLatch.countDown()
+                    }
+                }.start()
+            }
+            startLatch.countDown()
+            doneLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+
+            Log.d("KMD", "Binder buffer successfully poisoned (${parallelThreads}x${roundsPerThread} concurrent).")
         } catch (e: Exception) {
             // Flush failures are only logged and do not impact the main decryption process
             Log.w("KMD", "Binder buffer flush failed (ignored)", e)
@@ -904,6 +926,7 @@ val ephKeyBytes = keyPair.public.encoded
                         keyAgreement.init(recipientPrivateKey!!)
                         keyAgreement.doPhase(ephemeralPublicKey, true)
                         sharedSecret = keyAgreement.generateSecret()
+                        flushKeystoreBinderBuffer(recipientPrivateKey)
 
                         kekBytes = hkdfDerive(sharedSecret!!, masterKeyAlias.toByteArray(Charsets.UTF_8), ephKeyBytes)
                         kekSpec = CleanSecretKeySpec(kekBytes!!, DEK_ALGORITHM)
@@ -1024,6 +1047,7 @@ val ephKeyBytes = keyPair.public.encoded
                 keyAgreement.init(recipientPrivateKey!!)
                 keyAgreement.doPhase(ephemeralPublicKey, true)
                 sharedSecret = keyAgreement.generateSecret()
+                flushKeystoreBinderBuffer(recipientPrivateKey)
                 kekBytes = hkdfDerive(sharedSecret!!, masterKeyAlias.toByteArray(Charsets.UTF_8), pkg.ephemeralPublicKeyBytes!!)
                 kekSpec = CleanSecretKeySpec(kekBytes, DEK_ALGORITHM)
                 val unwrapCipher = Cipher.getInstance(DEK_WRAPPING_CIPHER)

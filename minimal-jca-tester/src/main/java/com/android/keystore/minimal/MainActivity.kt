@@ -18,6 +18,7 @@ package com.android.keystore.minimal
 import android.os.Bundle
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.security.keystore.KeyProtection
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -72,17 +73,27 @@ class MainActivity : ComponentActivity() {
         private const val KEK_ALIAS = "verify_master_kek_aes"
         private const val EC_KEY_ALIAS = "verify_ecdh_p521_key"
         private const val MDL_KEY_ALIAS = "mock_mdl_auth_key"
+        private const val SB_KEK_ALIAS = "verify_sb_master_kek_aes"
+        private const val SB_IMPORT_ALIAS = "verify_sb_imported_aes"
+        private const val SB_EC_KEY_ALIAS = "verify_sb_ecdh_p256_key"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val initialOutput = if (intent?.getBooleanExtra("auto_run_strongbox", false) == true) {
+            runStrongBoxVerification()
+        } else {
+            "Ready.\nSelect a verification or demo scenario below."
+        }
         setContent {
             MaterialTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     VerificationScreen(
                         modifier = Modifier.padding(innerPadding),
+                        initialOutput = initialOutput,
                         onRunKeyWrappingTest = { runKeyWrappingVerification() },
                         onRunEcdhTest = { runEcdhVerification() },
+                        onRunStrongBoxTest = { runStrongBoxVerification() },
                         onRunMockIdentityTestUnprotected = { runMockIdentityPresentation(enableCallerFlush = false) },
                         onRunMockIdentityTestProtected = { runMockIdentityPresentation(enableCallerFlush = true) },
                         onRunAllTests = {
@@ -431,18 +442,148 @@ class MainActivity : ComponentActivity() {
 
         return out.toString()
     }
+
+    /**
+     * Scenario 4: StrongBox (Citadel / Titan M2) JCA Verification
+     * Exercises setIsStrongBoxBacked(true) across Symmetric Wrapping, Key Import, and ECDH (P-256).
+     */
+    private fun runStrongBoxVerification(): String {
+        val out = StringBuilder()
+        out.appendLine("==================================================")
+        out.appendLine("[StrongBox JCA] Citadel / Titan M2 Leak Verification")
+        out.appendLine("==================================================")
+
+        try {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+
+            // 1. StrongBox Symmetric Key Wrapping (AES-256-GCM)
+            out.appendLine("1. StrongBox AES-256-GCM Wrapping (setIsStrongBoxBacked=true)...")
+            if (!keyStore.containsAlias(SB_KEK_ALIAS)) {
+                val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+                val spec = KeyGenParameterSpec.Builder(
+                    SB_KEK_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setKeySize(256)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true)
+                    .setIsStrongBoxBacked(true)
+                    .build()
+                keyGen.init(spec)
+                keyGen.generateKey()
+            }
+            val sbKek = keyStore.getKey(SB_KEK_ALIAS, null)
+                ?: throw IllegalStateException("Failed to load StrongBox KEK")
+
+            val sbDek = ByteArray(32)
+            SecureRandom().nextBytes(sbDek)
+            val sbDekHex = sbDek.joinToString("") { "%02x".format(it) }
+            out.appendLine("   [Target StrongBox DEK (32B)]:")
+            out.appendLine("   >> $sbDekHex <<")
+
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, sbKek)
+            val sbIv = cipher.iv
+            val wrappedSbDek = cipher.doFinal(sbDek)
+            sbDek.fill(0)
+
+            // Also unwrap to exercise StrongBox decryption output path
+            val decCipher = Cipher.getInstance("AES/GCM/NoPadding")
+            decCipher.init(Cipher.DECRYPT_MODE, sbKek, GCMParameterSpec(128, sbIv))
+            val unwrappedSbDek = decCipher.doFinal(wrappedSbDek)
+            unwrappedSbDek.fill(0)
+            out.appendLine("   -> Wrapped & Unwrapped via StrongBox AES-GCM; local copies zeroized.")
+
+            // 2. StrongBox Raw Key Import (KeyStore.setEntry + KeyProtection.setIsStrongBoxBacked(true))
+            out.appendLine("2. StrongBox Raw Key Import (KeyStore.setEntry)...")
+            val sbImportKey = ByteArray(32)
+            SecureRandom().nextBytes(sbImportKey)
+            val sbImportHex = sbImportKey.joinToString("") { "%02x".format(it) }
+            out.appendLine("   [Target StrongBox Imported Key (32B)]:")
+            out.appendLine("   >> $sbImportHex <<")
+
+            val protection = KeyProtection.Builder(
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setIsStrongBoxBacked(true)
+                .build()
+            keyStore.setEntry(
+                SB_IMPORT_ALIAS,
+                KeyStore.SecretKeyEntry(SecretKeySpec(sbImportKey, "AES")),
+                protection
+            )
+            sbImportKey.fill(0)
+            out.appendLine("   -> Imported into StrongBox & local key byte[] zeroized.")
+
+            // 3. StrongBox ECDH Key Agreement (P-256 / secp256r1)
+            out.appendLine("3. StrongBox ECDH Key Agreement (secp256r1, setIsStrongBoxBacked=true)...")
+            if (!keyStore.containsAlias(SB_EC_KEY_ALIAS)) {
+                val kpg = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, ANDROID_KEYSTORE)
+                val ecSpec = KeyGenParameterSpec.Builder(
+                    SB_EC_KEY_ALIAS,
+                    KeyProperties.PURPOSE_AGREE_KEY
+                )
+                    .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
+                    .setIsStrongBoxBacked(true)
+                    .build()
+                kpg.initialize(ecSpec)
+                kpg.generateKeyPair()
+            }
+            val sbEcEntry = keyStore.getEntry(SB_EC_KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
+
+            val peerKpg = KeyPairGenerator.getInstance("EC")
+            peerKpg.initialize(ECGenParameterSpec("secp256r1"))
+            val peerKeyPair = peerKpg.generateKeyPair()
+
+            val ka = KeyAgreement.getInstance("ECDH", ANDROID_KEYSTORE)
+            ka.init(sbEcEntry.privateKey)
+            ka.doPhase(peerKeyPair.public, true)
+            val sbSharedSecret = ka.generateSecret()
+            val sbSecretHex = sbSharedSecret.joinToString("") { "%02x".format(it) }
+            out.appendLine("   [Target StrongBox ECDH Shared Secret (32B)]:")
+            out.appendLine("   >> $sbSecretHex <<")
+            sbSharedSecret.fill(0)
+            out.appendLine("   -> StrongBox ECDH completed & local sharedSecret[] zeroized.")
+
+            // Save target keys for memory scanner
+            val targetFile = java.io.File(filesDir, "target_keys.txt")
+            targetFile.writeText(
+                "TARGET_SB_DEK_HEX=$sbDekHex\n" +
+                "TARGET_SB_IMPORT_HEX=$sbImportHex\n" +
+                "TARGET_SB_SHARED_SECRET_HEX=$sbSecretHex\n"
+            )
+
+            Log.i(TAG, "--------------------------------------------------")
+            Log.i(TAG, "[SCENARIO 4: STRONGBOX JCA VERIFICATION]")
+            Log.i(TAG, "TARGET_SB_DEK_HEX=$sbDekHex")
+            Log.i(TAG, "TARGET_SB_IMPORT_HEX=$sbImportHex")
+            Log.i(TAG, "TARGET_SB_SHARED_SECRET_HEX=$sbSecretHex")
+            Log.i(TAG, "--------------------------------------------------")
+
+        } catch (e: Exception) {
+            out.appendLine("ERROR in StrongBox JCA Verification: ${e.message}")
+            Log.e(TAG, "StrongBox JCA Verification failed", e)
+        }
+
+        return out.toString()
+    }
 }
 
 @Composable
 fun VerificationScreen(
     modifier: Modifier = Modifier,
+    initialOutput: String = "Ready.\nSelect a verification or demo scenario below.",
     onRunKeyWrappingTest: () -> String,
     onRunEcdhTest: () -> String,
+    onRunStrongBoxTest: () -> String,
     onRunMockIdentityTestUnprotected: () -> String,
     onRunMockIdentityTestProtected: () -> String,
     onRunAllTests: () -> String
 ) {
-    var outputLog by remember { mutableStateOf("Ready.\nSelect a verification or demo scenario below.") }
+    var outputLog by remember { mutableStateOf(initialOutput) }
 
     Column(
         modifier = modifier
@@ -498,6 +639,14 @@ fun VerificationScreen(
             ) {
                 Text("4. mDL (Protected / Flush)", fontSize = 11.sp)
             }
+        }
+
+        Button(
+            onClick = { outputLog = onRunStrongBoxTest() },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
+        ) {
+            Text("5. StrongBox JCA (Citadel: Wrap / Import / ECDH)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
 
         Button(
