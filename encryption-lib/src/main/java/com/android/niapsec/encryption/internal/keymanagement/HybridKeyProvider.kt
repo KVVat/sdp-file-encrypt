@@ -90,7 +90,7 @@ class HybridKeyProvider(
             val demParams = EciesAeadDemParams.newBuilder().setAeadDem(demKeyTemplate).build()
             val kemParams = EciesHkdfKemParams.newBuilder()
                 .setCurveType(EllipticCurveType.NIST_P521)
-                .setHkdfHashType(HashType.SHA256)
+                .setHkdfHashType(HashType.SHA512)
                 .build()
             val eciesParams = EciesAeadHkdfParams.newBuilder()
                 .setKemParams(kemParams)
