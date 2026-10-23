@@ -230,8 +230,9 @@ class RawHybridKeyProvider(
 
     /**
      * WORKAROUND [FCS_CKM_EXT.4]: Generates a dedicated hardware-backed EC key pair for Symmetric mode
-     * to perform ECDH key agreement. This is a workaround for the Keystore2 IPC memory leak
-     * observed when passing raw DEKs directly to Keystore2 for symmetric wrapping.
+     * to perform ECDH key agreement. This is a workaround for residual plaintext key material observed
+     * in IPC buffers when passing raw DEKs directly to Keystore2 for symmetric wrapping (caused by a
+     * Keystore2 issue and missing zeroization at the KeyMint / Binder boundary).
      * By using ECDH, the raw DEK never leaves the application process during wrapping.
      */
     private fun generateSymmetricEcKeyPairIfNeeded() {
@@ -749,8 +750,9 @@ class RawHybridKeyProvider(
         }
 
         /**
-         * WARNING: This symmetric stream encryption is currently unsafe due to an Android Keystore2
-         * bug causing memory leakage of the plaintext DEK. This should be treated as a known risk
+         * WARNING: This symmetric stream encryption is currently unsafe because residual plaintext DEK
+         * material remains in memory (caused by a Keystore2 issue and missing zeroization at the
+         * KeyMint / Binder boundary). This should be treated as a known risk
          * until native hardware-backed streaming encryption is supported without exposing the software DEK.
          */
         private fun newEncryptingStreamSymmetric(ciphertext: OutputStream, associatedData: ByteArray): OutputStream {
@@ -891,8 +893,9 @@ val ephKeyBytes = keyPair.public.encoded
         }
 
         /**
-         * WARNING: This stream decryption is currently unsafe due to an Android Keystore2
-         * bug causing memory leakage of the plaintext DEK.
+         * WARNING: This stream decryption is currently unsafe because residual plaintext DEK
+         * material remains in memory (caused by a Keystore2 issue and missing zeroization at the
+         * KeyMint / Binder boundary).
          */
         override fun newDecryptingStream(ciphertext: InputStream, associatedData: ByteArray): InputStream {
             val dis = DataInputStream(ciphertext)
@@ -1142,7 +1145,7 @@ private fun serializeEncryptedPackage(magicByte: Byte, ephemeralPublicKeyBytes: 
     val bos = ByteArrayOutputStream()
     DataOutputStream(bos).use {
         it.writeByte(magicByte.toInt())
-        // WORKAROUND [FCS_CKM_EXT.4] Keystore2 Leak Fix: Both Asymmetric AND Symmetric modes now use ECDH
+        // WORKAROUND [FCS_CKM_EXT.4] Residual key material mitigation: Both Asymmetric AND Symmetric modes now use ECDH
         // (Hybrid Envelope Encryption) to avoid raw DEK exposure in Binder IPC.
         if (magicByte == RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC || magicByte == RawHybridKeyProvider.MAGIC_BYTE_SYMMETRIC) {
             val ephKey = ephemeralPublicKeyBytes ?: throw IllegalArgumentException("Ephemeral public key required for ECDH mode")
@@ -1166,7 +1169,7 @@ private fun deserializeEncryptedPackage(ciphertext: ByteArray): EncryptedPackage
     val magicByte = buffer.get()
     var ephKey: ByteArray? = null
     
-    // WORKAROUND [FCS_CKM_EXT.4] Keystore2 Leak Fix: Both Asymmetric AND Symmetric modes now use ECDH 
+    // WORKAROUND [FCS_CKM_EXT.4] Residual key material mitigation: Both Asymmetric AND Symmetric modes now use ECDH
     // (Hybrid Envelope Encryption) to avoid raw DEK exposure in Binder IPC.
     if (magicByte == RawHybridKeyProvider.MAGIC_BYTE_ASYMMETRIC || magicByte == RawHybridKeyProvider.MAGIC_BYTE_SYMMETRIC) {
         val ephKeySize = buffer.int

@@ -450,7 +450,7 @@ class MainActivity : ComponentActivity() {
     private fun runStrongBoxVerification(): String {
         val out = StringBuilder()
         out.appendLine("==================================================")
-        out.appendLine("[StrongBox JCA] Citadel / Titan M2 Leak Verification")
+        out.appendLine("[StrongBox JCA] Citadel / Titan M2 Residual Key Material Verification")
         out.appendLine("==================================================")
 
         try {
@@ -592,7 +592,7 @@ fun VerificationScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            text = "KeyStore JCA Leak & Identity Verifier",
+            text = "KeyStore JCA Residual Key & Identity Verifier",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
