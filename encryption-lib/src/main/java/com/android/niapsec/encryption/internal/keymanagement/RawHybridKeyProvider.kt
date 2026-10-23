@@ -386,7 +386,7 @@ class RawHybridKeyProvider(
             // [FDP_DAR_EXT.2.4] If device is unlocked, prefer symmetric encryption (0x02)
             if (!isDeviceLockedReliably()) {
                 try {
-                    return _encryptSymmetric(plaintext, associatedData)
+                    return encryptSymmetric(plaintext, associatedData)
                 } catch (e: Exception) {
                     Log.w("RawHybridKeyProvider", "Symmetric encryption failed, falling back to asymmetric", e)
                 }
